@@ -8,8 +8,14 @@
     "start": "npx --yes http-server -p 8080 -c-1 .",
     "test": "node tools/simulate.mjs && node tools/smoke.mjs",
     "test:courses": "node tools/simulate.mjs",
-    "test:browser": "node tools/smoke.mjs"
+    "test:browser": "node tools/smoke.mjs",
+    "build": "node tools/bundle.mjs"
   },
-  "keywords": ["minigolf", "canvas", "devicemotion", "peli"],
+  "keywords": [
+    "minigolf",
+    "canvas",
+    "devicemotion",
+    "peli"
+  ],
   "license": "MIT"
 }

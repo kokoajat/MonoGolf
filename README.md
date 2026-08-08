@@ -22,9 +22,7 @@ npm start
 
 Avaa selaimessa `http://localhost:8080`.
 
-**Puhelimella pelatessa** sivu pitää tarjoilla https-osoitteesta. Helpoin tapa on
-GitHub Pages (Settings → Pages → haaraksi tämä haara, kansioksi `/`), jonka jälkeen peli
-löytyy osoitteesta `https://<käyttäjä>.github.io/MonoGolf/`.
+**Puhelimella pelatessa** sivu pitää tarjoilla https-osoitteesta. Ks. [Julkaisu](#julkaisu).
 
 ### Anturiluvat
 
@@ -32,6 +30,24 @@ löytyy osoitteesta `https://<käyttäjä>.github.io/MonoGolf/`.
   käyttäjän napautuksesta, joten paina aloitusruudun *"Ota anturit käyttöön ja aloita"*.
 - **Android (Chrome)**: anturit toimivat suoraan https-yhteydellä.
 - Jos antureita ei ole tai lupa evätään, peli vaihtaa automaattisesti kosketusohjaukseen.
+
+## Julkaisu
+
+Repossa on valmis GitHub Pages -workflow (`.github/workflows/pages.yml`), joka julkaisee
+sivuston jokaisella pushilla. **Pages pitää kytkeä päälle kerran käsin**, koska
+workflowin oma token ei saa luoda Pages-sivustoa:
+
+1. Repon **Settings → Pages**
+2. **Build and deployment → Source: GitHub Actions**
+3. **Actions → "Julkaise GitHub Pagesiin" → Run workflow** (tai pushaa mitä tahansa)
+
+Tämän jälkeen peli löytyy osoitteesta `https://<käyttäjä>.github.io/MonoGolf/`.
+
+### Yhden tiedoston versio
+
+`npm run build` kokoaa koko pelin yhdeksi tiedostoksi `dist/index.html` (n. 80 kt, ei
+ulkoisia viittauksia). Sen voi pudottaa mihin tahansa staattiseen hostiin tai lähettää
+sellaisenaan – kaikki 18 väylää, fysiikka ja anturituki ovat mukana.
 
 ## Ohjaus
 
@@ -113,6 +129,7 @@ src/sensors.js      devicemotion-luku ja heilautuksen tunnistus
 src/render.js       canvas-piirto
 src/audio.js        WebAudio-tehosteet
 src/game.js         tilakone, syötteet ja käyttöliittymä
+tools/bundle.mjs    kokoaa kaiken yhdeksi HTML-tiedostoksi
 ```
 
 ### Testit
@@ -121,7 +138,11 @@ src/game.js         tilakone, syötteet ja käyttöliittymä
 npm test              # molemmat alla olevat
 npm run test:courses  # fysiikka + ratojen tarkistus (headless, ei selainta)
 npm run test:browser  # Chromium: käyttöliittymä ja anturiohjaus
+npm run build         # yhden tiedoston kooste dist/index.html
 ```
+
+Koosteen voi testata samalla testillä:
+`node tools/smoke.mjs --entry dist/index.html`.
 
 `tools/simulate.mjs` ajaa fysiikkamoottoria ilman selainta ja tarkistaa jokaiselta
 väylältä, että tiiaus ja reikä ovat kelvollisissa paikoissa, ettei pallo karkaa radalta

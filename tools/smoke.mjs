@@ -33,6 +33,8 @@ const getArg = (n, d) => {
 };
 const SHOTS = Number(getArg('--shots', 3));
 const SHOT_DIR = getArg('--shot-dir', path.join(root, '.shots'));
+// Oletuksena testataan moduuliversiota; --entry dist/index.html testaa koosteen.
+const ENTRY = getArg('--entry', '');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -57,7 +59,7 @@ const server = http.createServer((req, res) => {
 
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const port = server.address().port;
-const base = `http://127.0.0.1:${port}/`;
+const base = `http://127.0.0.1:${port}/${ENTRY}`;
 
 fs.mkdirSync(SHOT_DIR, { recursive: true });
 
