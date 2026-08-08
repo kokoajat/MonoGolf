@@ -1,0 +1,42 @@
+name: Julkaise GitHub Pagesiin
+
+on:
+  push:
+    branches:
+      - claude/html-minigolf-sensor-game-kr82xf
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Yksi julkaisu kerrallaan; käynnissä olevaa ei keskeytetä.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ota Pages käyttöön
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      # Peli on staattinen: koko repo tarjoillaan sellaisenaan.
+      - name: Pakkaa sivusto
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Julkaise
+        id: deployment
+        uses: actions/deploy-pages@v4
