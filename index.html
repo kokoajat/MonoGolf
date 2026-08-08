@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="fi">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#12281a" />
+    <meta
+      name="description"
+      content="MonoGolf – 18 väylän minigolf superpallolla, ohjaus puhelimen liikeantureilla."
+    />
+    <title>MonoGolf – 18 väylän minigolf</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232f8f4e'/><circle cx='12' cy='20' r='6' fill='white'/><path d='M22 6v14' stroke='white' stroke-width='2'/><path d='M22 7l7 3-7 3z' fill='%23e33b2e'/></svg>"
+    />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="hole">
+          <span class="hole-number" id="holeNumber">1/18</span>
+          <span class="hole-name" id="holeName">Avaus</span>
+        </div>
+        <div class="stats">
+          <div class="stat"><span id="par">Par 2</span></div>
+          <div class="stat"><b id="strokes">0</b><small>lyöntiä</small></div>
+          <div class="stat"><b id="total">–</b><small>yhteensä</small></div>
+        </div>
+      </header>
+
+      <main class="stage">
+        <canvas id="course"></canvas>
+      </main>
+
+      <section class="panel">
+        <p class="status" id="status">Heilauta puhelinta lyödäksesi.</p>
+        <p class="hint" id="hint"></p>
+
+        <div class="meter">
+          <span class="meter-label">Voima</span>
+          <div class="bar"><div class="fill power" id="powerFill"></div></div>
+          <span class="meter-value" id="powerLabel">0 %</span>
+        </div>
+
+        <div class="meter" id="motionRow" hidden>
+          <span class="meter-label">Liike</span>
+          <div class="bar"><div class="fill motion" id="motionFill"></div></div>
+          <span class="meter-value">anturi</span>
+        </div>
+
+        <div class="controls">
+          <button id="btnSensors" class="wide">Ota anturit käyttöön</button>
+          <button id="btnMode">Heilautus</button>
+          <button id="btnReset">Alusta</button>
+          <button id="btnScore">Tulokset</button>
+          <button id="btnSound" aria-label="Äänet päällä">🔊</button>
+        </div>
+      </section>
+
+      <div id="overlay" class="overlay" hidden>
+        <div class="card" id="overlayCard"></div>
+      </div>
+    </div>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>

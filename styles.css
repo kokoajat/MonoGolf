@@ -1,0 +1,358 @@
+:root {
+  --bg: #0d1a12;
+  --panel: #14261a;
+  --panel-2: #1b3323;
+  --line: rgba(255, 255, 255, 0.12);
+  --text: #eef4ee;
+  --muted: #a9bfae;
+  --accent: #52d67e;
+  --accent-dark: #2f8f4e;
+  --warn: #ffcf4d;
+  --danger: #e35d4b;
+  --radius: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-width: 620px;
+  margin: 0 auto;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* --- Yläpalkki ---------------------------------------------------------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px 8px;
+}
+
+.hole {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
+
+.hole-number {
+  font-size: 12px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hole-name {
+  font-size: 19px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stats {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 46px;
+}
+
+.stat b {
+  font-size: 18px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat small {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* --- Pelialue ----------------------------------------------------------- */
+
+.stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 10px;
+}
+
+#course {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius);
+  touch-action: none;
+  background: #17281c;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+/* --- Alapaneeli --------------------------------------------------------- */
+
+.panel {
+  flex: 0 0 auto;
+  padding: 10px 14px calc(12px + env(safe-area-inset-bottom));
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  margin-top: 10px;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.status {
+  margin: 2px 0 4px;
+  font-size: 14px;
+  min-height: 1.3em;
+}
+
+.hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.meter-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  width: 44px;
+}
+
+.meter-value {
+  font-size: 11px;
+  color: var(--muted);
+  width: 46px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.bar {
+  flex: 1;
+  height: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  transition: width 60ms linear;
+}
+
+.fill.power {
+  background: linear-gradient(90deg, var(--accent), var(--warn), var(--danger));
+}
+
+.fill.motion {
+  background: linear-gradient(90deg, #4aa3ff, #9cf);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+button {
+  flex: 1 1 auto;
+  min-height: 44px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+button:active {
+  transform: translateY(1px);
+  background: #24462f;
+}
+
+button.wide {
+  flex: 2 1 180px;
+}
+
+button.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+button.primary {
+  background: var(--accent-dark);
+  border-color: var(--accent);
+}
+
+/* --- Overlay ------------------------------------------------------------ */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 12, 7, 0.78);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 20;
+}
+
+.overlay[hidden] {
+  display: none;
+}
+
+.card {
+  width: 100%;
+  max-width: 440px;
+  max-height: 86dvh;
+  overflow-y: auto;
+  background: linear-gradient(180deg, #1d3625, #142519);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.card h2 {
+  margin: 0 0 10px;
+  font-size: 22px;
+}
+
+.card p {
+  margin: 0 0 10px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #dfeade;
+}
+
+.card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.scorecard {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 4px 0 8px;
+}
+
+.scorecard th,
+.scorecard td {
+  padding: 5px 6px;
+  text-align: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.scorecard th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.scorecard td.name {
+  text-align: left;
+}
+
+.scorecard tr.under td {
+  color: var(--accent);
+}
+
+.scorecard tr.over td {
+  color: #ffb4a5;
+}
+
+.scorecard tfoot td {
+  font-weight: 700;
+  border-top: 1px solid var(--line);
+}
+
+.scorecard tbody tr {
+  cursor: pointer;
+}
+
+.scorecard tbody tr:active,
+.scorecard tbody tr:focus-visible {
+  background: rgba(82, 214, 126, 0.16);
+  outline: none;
+}
+
+.scorecard tr.current td {
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.total-line {
+  font-weight: 600;
+}
+
+.card p.note {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+@media (min-height: 780px) {
+  .status {
+    font-size: 15px;
+  }
+  .hint {
+    font-size: 13px;
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "monogolf",
+  "version": "1.0.0",
+  "description": "18 väylän minigolfpeli superpallolla – ohjaus puhelimen liikeantureilla",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "npx --yes http-server -p 8080 -c-1 .",
+    "test": "node tools/simulate.mjs && node tools/smoke.mjs",
+    "test:courses": "node tools/simulate.mjs",
+    "test:browser": "node tools/smoke.mjs"
+  },
+  "keywords": ["minigolf", "canvas", "devicemotion", "peli"],
+  "license": "MIT"
+}
