@@ -1,5 +1,7 @@
 # MonoGolf
 
+**Pelaa: https://kokoajat.github.io/MonoGolf/**
+
 18 väylän minigolfpeli selaimessa. Pallona on **superpallo**, joka kimpoaa laidoista
 oikean jäykän kappaleen fysiikan mukaan. Lyönti tehdään **heilauttamalla puhelinta** –
 heilautuksen suunta ja voimakkuus luetaan laitteen kiihtyvyysantureista. Kun pallo on
@@ -33,15 +35,15 @@ Avaa selaimessa `http://localhost:8080`.
 
 ## Julkaisu
 
-Repossa on valmis GitHub Pages -workflow (`.github/workflows/pages.yml`), joka julkaisee
-sivuston jokaisella pushilla. **Pages pitää kytkeä päälle kerran käsin**, koska
-workflowin oma token ei saa luoda Pages-sivustoa:
+Peli on julkaistu osoitteeseen **https://kokoajat.github.io/MonoGolf/**.
 
-1. Repon **Settings → Pages**
-2. **Build and deployment → Source: GitHub Actions**
-3. **Actions → "Julkaise GitHub Pagesiin" → Run workflow** (tai pushaa mitä tahansa)
+`.github/workflows/pages.yml` julkaisee sivuston uudelleen jokaisella pushilla tämän
+haaran tai `main`in päälle, ja sen voi ajaa myös käsin (**Actions → "Julkaise GitHub
+Pagesiin" → Run workflow**).
 
-Tämän jälkeen peli löytyy osoitteesta `https://<käyttäjä>.github.io/MonoGolf/`.
+Forkkia varten: Pages pitää kytkeä kerran päälle repon asetuksista
+(**Settings → Pages → Build and deployment → Source: GitHub Actions**), koska
+workflowin oma token ei saa luoda Pages-sivustoa.
 
 ### Yhden tiedoston versio
 
