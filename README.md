@@ -65,22 +65,29 @@ Heilautustilassa puhelinta pidetään **vaakatasossa näyttö ylöspäin** ja he
 siihen suuntaan, johon pallon halutaan lähtevän: puhelimen yläreunan suunta vastaa
 ruudulla ylöspäin.
 
-Lyönnin kulku on kaksivaiheinen: niin kauan kuin puhelin liikkuu, peli vain kerää
-liikkeestä huippukiihtyvyyden (= voima) ja kiihdytysvaiheen suunnan. Kun puhelin on
-ollut paikallaan hetken, lyönti laukeaa. Näin lyönnin voi ottaa rauhassa eikä liike
-katkea kesken.
+Lyönnin kulku on kaksivaiheinen: niin kauan kuin puhelin liikkuu, peli integroi
+kiihtyvyydestä puhelimen nopeuden ja kerää siitä huippunopeuden (= voima) sekä
+nopeudella painotetun suunnan. Kun puhelin on ollut paikallaan hetken, lyönti laukeaa.
+Suunta luetaan nimenomaan nopeudesta eikä kiihtyvyyden huipusta: heilautuksen voimakkain
+kiihtyvyyspiikki on usein lopun jarrutus, joka osoittaa vastakkaiseen suuntaan.
 
-Alapalkin *Liike*-mittari näyttää anturin lukeman reaaliajassa, joten anturien toiminnan
-näkee heti. *Voima*-mittari näyttää lyönnin tehon.
+Rata täyttää koko ruudun. Radan päällä kelluvat vain tilateksti ja mittarit: *Liike*
+näyttää anturin lukeman reaaliajassa ja *Voima* lyönnin tehon. Kaikki painikkeet ovat
+yläkulman **rataskuvakkeen** takana, eivätkä ne vie tilaa pelialueelta.
 
-Pallon vieriessä käyttöliittymä väistyy ja pelialue täyttää ruudun. Kamera seuraa
-palloa: hitaassa vauhdissa lähempää, kovassa vauhdissa laajemmalta, jotta pallon eteen
-ehtii nähdä. Kun pallo pysähtyy, näkymä palaa koko väylään.
+Pallon vieriessä mittaritkin väistyvät ja kamera seuraa palloa: hitaassa vauhdissa
+lähempää, kovassa vauhdissa laajemmalta, jotta pallon eteen ehtii nähdä. Kun pallo
+pysähtyy, näkymä palaa koko väylään.
 
-Muut painikkeet: **Alusta** aloittaa väylän alusta, **Tulokset** avaa tuloskortin (jonka
-riviä napauttamalla voi siirtyä suoraan valitulle väylälle) ja kaiutinkuvake vaihtaa
-äänet päälle/pois. Tulokset ja väylien ennätykset tallentuvat selaimen
-`localStorage`-muistiin.
+Valikon painikkeet: **Alusta väylä** aloittaa väylän alusta, **Tulokset** avaa
+tuloskortin (jonka riviä napauttamalla voi siirtyä suoraan valitulle väylälle),
+**Nollaa peli** aloittaa kierroksen alusta väylältä 1 (ennätykset voi säilyttää tai
+nollata) ja kaiutinkuvake vaihtaa äänet päälle/pois.
+
+Tulokset ja ennätykset tallentuvat selaimen `localStorage`-muistiin. Kesken jäänyt
+kierros jatkuu seuraavalla käynnistyksellä siltä väylältä, jolle se jäi – aloitusruutu
+kertoo tämän ja tarjoaa myös aloituksen alusta. Loppuun pelattu kierros nollautuu
+itsestään.
 
 ## Fysiikkamalli
 
@@ -112,25 +119,31 @@ Kaikki lasketaan SI-yksiköissä ja oikeilla mitoilla: pallon halkaisija 4,3 cm 
 | # | Väylä | Par | Idea |
 | --- | --- | --- | --- |
 | 1 | Avaus | 2 | suora avausväylä |
-| 2 | Portti | 2 | kaksi kapeaa aukkoa |
+| 2 | Portti | 2 | kaksi kapeaa aukkoa pylväiden välissä |
 | 3 | Kulma | 3 | dogleg oikealle |
 | 4 | Vastakulma | 3 | dogleg vasemmalle, kimmoisa tolppa |
 | 5 | Kapeikko | 3 | porrastetut aukot |
-| 6 | Kimmoke | 3 | vaatii laitakimmokkeen |
-| 7 | Hiekkasärkät | 3 | hiekkaesteet |
+| 6 | Kimmoke | 3 | kaarevat seinät, vaatii kimmokkeen |
+| 7 | Hiekkasärkät | 3 | pyöreät hiekkalaikut |
 | 8 | Vesieste | 3 | kapea silta veden yli |
 | 9 | Mylly | 3 | pyörivät siivet |
 | 10 | Ylämäki | 3 | rinne valuttaa takaisin |
-| 11 | Flipperi | 3 | kimmoisat tolpat |
-| 12 | Siksak | 4 | neljä mutkaa |
+| 11 | Flipperi | 3 | kapseliareena ja kimmoisat tolpat |
+| 12 | Siksak | 4 | neljä vinoa mutkaa |
 | 13 | Liukuovet | 4 | liikkuvat palkit |
-| 14 | Kannas | 3 | kapea kannas veden keskellä |
+| 14 | Saari | 3 | rengasmainen lampi, saari ja kannas |
 | 15 | Jäärata | 3 | liukas jää, hiekkakulmat |
-| 16 | Spiraali | 4 | kaksi kehää sisäänpäin |
+| 16 | Spiraali | 4 | kaksi kaarevaa kehää sisäänpäin |
 | 17 | Risteys | 4 | turvallinen tai nopea reitti |
 | 18 | Finaali | 5 | tolpat, liukuovi, vesi ja mylly |
 
 Yhteispar 58.
+
+Väylien geometria kirjoitetaan `src/courses.js`:ssä ruudukkoyksiköissä. Käytettävissä on
+sekä suoria muotoja (`rect`, `box`) että pyöreitä (`circlePoly`, `roundedRect`,
+`stadium`, `arcWall`, `post`); vyöhykkeet voivat olla suorakaiteita, ympyröitä tai
+monikulmioita. Pintavyöhykkeistä myöhempi voittaa aiemman, joten veden päälle voi
+piirtää saaren tai kannaksen.
 
 ## Kehitys
 

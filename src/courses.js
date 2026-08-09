@@ -17,15 +17,59 @@ const R = W - M; // oikea reuna
 const T = 0.4; // yläreuna
 const B = H - 0.3; // alareuna
 
-/** Suorakaiteen muotoinen väylä. */
-function frame() {
+/** Perusväylä: suorakaide pyöristetyin kulmin, jotta nurkista saa kimmokkeita. */
+function frame(radius = 0.5) {
+  return roundedRect(L, T, R - L, B - T, radius);
+}
+
+/** Kapselinmuotoinen väylä: päädyt puoliympyröinä. */
+function stadium(inset = 0.25) {
+  const x = L + inset;
+  const w = R - L - inset * 2;
+  return roundedRect(x, T, w, B - T, w / 2, 10);
+}
+
+
+// --- Muotoapurit ------------------------------------------------------------
+
+/** Kaaren pisteet. Kulmat radiaaneina, y kasvaa alaspäin. */
+function arcPoints(cx, cy, r, a0, a1, steps = 12) {
+  const pts = [];
+  for (let i = 0; i <= steps; i++) {
+    const a = a0 + ((a1 - a0) * i) / steps;
+    pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
+  }
+  return pts;
+}
+
+function circlePoly(cx, cy, r, steps = 40) {
+  return arcPoints(cx, cy, r, 0, Math.PI * 2 - (Math.PI * 2) / steps, steps - 1);
+}
+
+/** Pyöristetty suorakaide. Säde r leikkautuu automaattisesti sopivaksi. */
+function roundedRect(x, y, w, h, r, steps = 6) {
+  const rad = Math.min(r, w / 2, h / 2);
   return [
-    [L, T],
-    [R, T],
-    [R, B],
-    [L, B],
+    ...arcPoints(x + w - rad, y + rad, rad, -Math.PI / 2, 0, steps),
+    ...arcPoints(x + w - rad, y + h - rad, rad, 0, Math.PI / 2, steps),
+    ...arcPoints(x + rad, y + h - rad, rad, Math.PI / 2, Math.PI, steps),
+    ...arcPoints(x + rad, y + rad, rad, Math.PI, Math.PI * 1.5, steps),
   ];
 }
+
+/** Kaareva seinä: ulkokaari ja sisäkaari yhdeksi renkaan palaksi. */
+function arcWall(cx, cy, r, a0, a1, thickness = 0.22, steps = 14) {
+  return {
+    poly: [
+      ...arcPoints(cx, cy, r + thickness / 2, a0, a1, steps),
+      ...arcPoints(cx, cy, r - thickness / 2, a1, a0, steps),
+    ],
+  };
+}
+
+const deg = (d) => (d * Math.PI) / 180;
+const sandCircle = (x, y, r) => ({ type: 'sand', circle: [x, y, r] });
+const waterCircle = (x, y, r) => ({ type: 'water', circle: [x, y, r] });
 
 const rect = (x, y, w, h) => ({ poly: box(x, y, w, h) });
 const post = (x, y, r, opts = {}) => ({ circle: [x, y, r], ...opts });
@@ -53,9 +97,13 @@ const DESIGNS = [
   {
     name: 'Portti',
     par: 2,
-    hint: 'Kaksi kapeaa aukkoa. Suoraan keskeltä ei pääse.',
+    hint: 'Kaksi kapeaa aukkoa pylväiden välissä. Suoraan keskeltä ei pääse.',
     boundary: frame(),
-    obstacles: [rect(1.25, 4.0, 1.1, 0.3), rect(L, 4.0, 0.45, 0.3), rect(2.9, 4.0, 0.45, 0.3)],
+    obstacles: [
+      post(1.8, 4.15, 0.52),
+      post(0.52, 4.15, 0.28),
+      post(3.08, 4.15, 0.28),
+    ],
     zones: [],
     tee: [1.8, 7.0],
     cup: [1.8, 1.3],
@@ -120,9 +168,12 @@ const DESIGNS = [
   {
     name: 'Kimmoke',
     par: 3,
-    hint: 'Suoraa linjaa ei ole. Superpallo pitää pomputtaa perille.',
+    hint: 'Kaarevat seinät ohjaavat kimmokkeen. Suoraa linjaa ei ole.',
     boundary: frame(),
-    obstacles: [rect(L, 4.2, 2.55, 0.3), rect(0.9, 2.4, 2.45, 0.3)],
+    obstacles: [
+      arcWall(0.6, 4.4, 2.1, deg(-72), deg(6), 0.26),
+      arcWall(3.0, 2.3, 2.1, deg(108), deg(186), 0.26),
+    ],
     zones: [],
     tee: [1.8, 7.0],
     cup: [0.72, 1.25],
@@ -135,7 +186,12 @@ const DESIGNS = [
     hint: 'Hiekassa pallo pysähtyy nopeasti. Kierrä särkät.',
     boundary: frame(),
     obstacles: [post(1.8, 4.35, 0.18)],
-    zones: [sand(L, 5.0, 1.4, 1.2), sand(2.0, 3.3, 1.35, 1.3), sand(0.9, 1.9, 1.2, 0.85)],
+    zones: [
+      sandCircle(0.95, 5.6, 0.72),
+      sandCircle(2.6, 4.0, 0.78),
+      sandCircle(1.35, 2.35, 0.62),
+      sandCircle(2.95, 6.2, 0.45),
+    ],
     tee: [1.0, 7.0],
     cup: [2.7, 1.3],
   },
@@ -183,8 +239,8 @@ const DESIGNS = [
   {
     name: 'Flipperi',
     par: 3,
-    hint: 'Kimmoisat tolpat sinkoavat palloa. Pehmeä lyönti kannattaa.',
-    boundary: frame(),
+    hint: 'Pyöreä areena ja kimmoisat tolpat. Pehmeä lyönti kannattaa.',
+    boundary: stadium(0.1),
     obstacles: [
       post(1.0, 5.0, 0.22, { e: 0.95 }),
       post(2.6, 5.0, 0.22, { e: 0.95 }),
@@ -201,13 +257,14 @@ const DESIGNS = [
   {
     name: 'Siksak',
     par: 4,
-    hint: 'Neljä mutkaa. Malta pitää vauhti kurissa.',
+    hint: 'Neljä vinoa mutkaa. Malta pitää vauhti kurissa.',
     boundary: frame(),
+    // Vinot seinät ohjaavat kimmokkeen seuraavaan aukkoon.
     obstacles: [
-      rect(L, 6.0, 2.4, 0.25),
-      rect(0.95, 4.7, 2.4, 0.25),
-      rect(L, 3.4, 2.4, 0.25),
-      rect(0.95, 2.1, 2.4, 0.25),
+      { poly: [[L, 6.15], [2.65, 5.75], [2.65, 6.0], [L, 6.4]] },
+      { poly: [[0.95, 4.45], [R, 4.85], [R, 5.1], [0.95, 4.7]] },
+      { poly: [[L, 3.55], [2.65, 3.15], [2.65, 3.4], [L, 3.8]] },
+      { poly: [[0.95, 1.85], [R, 2.25], [R, 2.5], [0.95, 2.1]] },
     ],
     zones: [],
     tee: [1.8, 7.3],
@@ -241,19 +298,23 @@ const DESIGNS = [
 
   // 14 -------------------------------------------------------------------
   {
-    name: 'Kannas',
+    name: 'Saari',
     par: 3,
-    hint: 'Kapea kannas veden yli. Laidat eivät auta täällä.',
+    hint: 'Pyöreä lampi ja sen keskellä saari. Kapeat kannakset kiertävät reunoja.',
     boundary: frame(),
     obstacles: [],
     zones: [
-      water(L, 1.6, 1.05, 3.6),
-      water(2.35, 1.6, 1.0, 3.6),
-      water(L, T, 0.7, 0.7),
-      water(2.65, T, 0.7, 0.7),
+      // Rengasmainen lampi. Keskellä oleva saari ja sinne johtava kapea
+      // kannas piirretään veden päälle: myöhempi vyöhyke voittaa.
+      waterCircle(1.8, 3.1, 1.42),
+      { type: 'green', circle: [1.8, 3.1, 0.66] },
+      // Kannas päättyy rantaviivaan, ei sen yli.
+      { type: 'green', rect: [1.62, 3.1, 0.36, 1.47] },
+      waterCircle(0.62, 5.5, 0.42),
+      waterCircle(2.98, 5.5, 0.42),
     ],
     tee: [1.8, 7.0],
-    cup: [1.8, 1.15],
+    cup: [1.8, 3.1],
   },
 
   // 15 -------------------------------------------------------------------
@@ -272,19 +333,13 @@ const DESIGNS = [
   {
     name: 'Spiraali',
     par: 4,
-    hint: 'Sisään oikeasta alakulmasta, ulompaa kierrosta ympäri ja sisäkehälle ylhäältä.',
+    hint: 'Sisään alhaalta, kierros rengasta pitkin ja sisäkehälle ylhäältä.',
     boundary: frame(),
     obstacles: [
-      // ulompi kehä, aukko oikealla alhaalla
-      rect(0.7, 1.2, 2.2, 0.14),
-      rect(0.7, 1.2, 0.14, 4.4),
-      rect(2.76, 1.2, 0.14, 4.4),
-      rect(0.7, 5.46, 1.5, 0.14),
-      // sisäkehä, aukko ylhäällä vasemmalla
-      rect(1.85, 1.9, 0.5, 0.14),
-      rect(1.25, 1.9, 0.14, 3.0),
-      rect(2.21, 1.9, 0.14, 3.0),
-      rect(1.25, 4.76, 1.1, 0.14),
+      // Ulkokehä: aukko alhaalla, muuten umpinainen renkaan pala.
+      arcWall(1.8, 3.4, 1.42, deg(110), deg(430), 0.22, 40),
+      // Sisäkehä: aukko ylhäällä, vastakkaisella puolella.
+      arcWall(1.8, 3.4, 0.72, deg(290), deg(610), 0.2, 28),
     ],
     zones: [],
     tee: [1.8, 7.0],

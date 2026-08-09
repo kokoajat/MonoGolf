@@ -42,6 +42,7 @@ export class Renderer {
     this.particles = [];
     // Kamera maailmakoordinaateissa: keskipiste ja zoom suhteessa koko radan näkymään.
     this.cam = { x: null, y: null, zoom: 1 };
+    this.following = false;
     this.shake = 0;
   }
 
@@ -79,11 +80,21 @@ export class Renderer {
       ty = camera.follow.y + (camera.follow.vy || 0) * lead;
     }
 
-    if (this.cam.x === null) {
+    // Seurannan alkaessa keskipiste napsautetaan suoraan palloon. Zoomin
+    // ollessa vielä 1 koko rata mahtuu kuvaan ja rajaus pitää keskipisteen
+    // paikallaan, joten hyppy ei näy – mutta ilman tätä kamera panoroisi
+    // radan keskeltä palloon juuri kun zoom lähtee liikkeelle, mikä näkyy
+    // nykäyksenä. Ulos zoomatessa rajaus hoitaa saman itsestään.
+    const startedFollowing = !!camera?.follow && !this.following;
+    this.following = !!camera?.follow;
+
+    const firstFrame = this.cam.x === null;
+    if (firstFrame || startedFollowing) {
       this.cam.x = tx;
       this.cam.y = ty;
-      this.cam.zoom = targetZoom;
-    } else {
+      if (firstFrame) this.cam.zoom = targetZoom;
+    }
+    if (!firstFrame) {
       const kz = 1 - Math.exp(-dt / CAM_TAU_ZOOM);
       const kp = 1 - Math.exp(-dt / CAM_TAU_PAN);
       this.cam.zoom += (targetZoom - this.cam.zoom) * kz;
@@ -138,6 +149,7 @@ export class Renderer {
     this.cam.x = null;
     this.cam.y = null;
     this.cam.zoom = 1;
+    this.following = false;
     this.shake = 0;
     this.particles.length = 0;
     this.trail.length = 0;
@@ -236,6 +248,18 @@ export class Renderer {
         ctx.fill();
         ctx.globalAlpha = 1;
         ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        ctx.lineWidth = 0.02 * this.u;
+        ctx.stroke();
+      } else if (zone.type === 'green') {
+        // Nurmivyöhyke veden päällä: saari tai kannas. Piirretään samalla
+        // sävytyksellä kuin pohja, jotta se sulautuu muuhun viheriöön.
+        ctx.save();
+        shape();
+        ctx.clip();
+        this.drawGreen(ctx, world);
+        ctx.restore();
+        shape();
+        ctx.strokeStyle = 'rgba(232,244,232,0.5)';
         ctx.lineWidth = 0.02 * this.u;
         ctx.stroke();
       } else if (zone.type === 'rough') {

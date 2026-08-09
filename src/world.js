@@ -113,9 +113,12 @@ export class World {
       }
       const surf = SURFACES[zone.type];
       if (surf) {
+        // Myöhempi pintavyöhyke voittaa aiemman, myös veden: näin veden
+        // päälle voi piirtää saaren tai kannaksen.
         mu = surf.mu;
         grip = surf.grip;
         type = zone.type;
+        water = false;
       }
     }
     return { mu, grip, ax, ay, water, type };

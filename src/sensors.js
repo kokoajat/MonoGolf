@@ -11,11 +11,16 @@
 
 const START_THRESHOLD = 6.0; // m/s^2, liikkeen tunnistus alkaa
 const STILL_THRESHOLD = 1.8; // m/s^2, tätä hiljaisempi = puhelin paikallaan
-const STILL_HOLD = 0.16; // s, kuinka kauan paikallaan ennen laukaisua
+const STILL_HOLD = 0.2; // s, kuinka kauan paikallaan ennen laukaisua
 const MAX_WINDOW = 4.0; // s, varmistusraja jos puhelin ei pysähdy koskaan
-const PEAK_MIN = 7.0; // m/s^2 -> teho 0
-const PEAK_MAX = 34.0; // m/s^2 -> teho 1
+// Teho luetaan heilautuksen huippunopeudesta (m/s), joka saadaan
+// integroimalla kiihtyvyys.
+const SWING_V_MIN = 0.35; // m/s -> teho 0
+const SWING_V_MAX = 2.6; // m/s -> teho 1
+const VELOCITY_LEAK = 0.5; // s, integroinnin vuotoaikavakio
 const GRAVITY_ALPHA = 0.88; // alipäästösuodattimen kerroin
+const GRAVITY_GATE = 1.5; // m/s^2, tätä suurempi poikkeama = liikettä, ei päivitetä
+const GRAVITY_REACQUIRE = 0.8; // s, uuden asennon vakiintumisaika
 
 export function motionSupported() {
   return typeof window !== 'undefined' && 'DeviceMotionEvent' in window;
@@ -35,6 +40,8 @@ export class MotionInput extends EventTarget {
     this.permission = 'unknown'; // unknown | granted | denied | unsupported
     this.gravity = { x: 0, y: 0, z: 0 };
     this.gravityReady = false;
+    this._lastAcc = null;
+    this._offSince = 0;
     this.level = 0; // viimeisin liikkeen voimakkuus (mittarille)
     this.lastEventAt = 0;
     this.sampleRate = 0;
@@ -148,14 +155,42 @@ export class MotionInput extends EventTarget {
       if (!this.gravityReady) {
         this.gravity = a;
         this.gravityReady = true;
+        this._offSince = 0;
       } else {
-        const k = GRAVITY_ALPHA;
-        this.gravity = {
-          x: k * this.gravity.x + (1 - k) * a.x,
-          y: k * this.gravity.y + (1 - k) * a.y,
-          z: k * this.gravity.z + (1 - k) * a.z,
-        };
+        // Painovoima-arviota päivitetään vain kun laite on rauhassa. Jos
+        // suodatin seuraisi heilautusta, se söisi osan signaalista ja jättäisi
+        // liikkeen ajaksi pysyvän harhan, joka näkyisi vääränä suuntana.
+        const dev = Math.hypot(
+          a.x - this.gravity.x,
+          a.y - this.gravity.y,
+          a.z - this.gravity.z,
+        );
+        if (dev < GRAVITY_GATE) {
+          const k = GRAVITY_ALPHA;
+          this.gravity = {
+            x: k * this.gravity.x + (1 - k) * a.x,
+            y: k * this.gravity.y + (1 - k) * a.y,
+            z: k * this.gravity.z + (1 - k) * a.z,
+          };
+          this._offSince = 0;
+        } else {
+          // Laite on käännetty toiseen asentoon: kun lukema on pysynyt
+          // tasaisena hetken, painovoima haetaan uudestaan.
+          const steady =
+            this._lastAcc &&
+            Math.hypot(
+              a.x - this._lastAcc.x,
+              a.y - this._lastAcc.y,
+              a.z - this._lastAcc.z,
+            ) < 0.6;
+          if (!this._offSince) this._offSince = now;
+          if (steady && now - this._offSince > GRAVITY_REACQUIRE) {
+            this.gravity = { ...a };
+            this._offSince = 0;
+          }
+        }
       }
+      this._lastAcc = a;
       lin = {
         x: a.x - this.gravity.x,
         y: a.y - this.gravity.y,
@@ -169,23 +204,25 @@ export class MotionInput extends EventTarget {
     this.dispatchEvent(new CustomEvent('motion', { detail: { level: mag } }));
 
     if (!this.armed) return;
-    this._trackSwing(lin, mag, now);
+    this._trackSwing(lin, mag, now, Math.max(0.004, Math.min(0.05, dt)));
   }
 
-  _trackSwing(lin, mag, now) {
+  _trackSwing(lin, mag, now, dt) {
     if (!this.swing) {
       if (mag < START_THRESHOLD) return;
       this.swing = {
         start: now,
-        peak: 0,
-        peakAt: now,
-        stillSince: 0,
+        vx: 0,
+        vy: 0,
+        vz: 0,
+        peakSpeed: 0,
         dirX: 0,
         dirY: 0,
         dirZ: 0,
+        stillSince: 0,
         samples: 0,
       };
-      // Varmistus: jos anturitapahtumat loppuvat kesken heilautuksen
+      // Varmistus: jos anturitapahtumat loppuvat kesken liikkeen
       // (selain voi hidastaa niitä), lyönti laukaistaan silti.
       this._swingTimer = setTimeout(() => this._finishSwing(), MAX_WINDOW * 1000 + 40);
       this.dispatchEvent(new CustomEvent('swingstart'));
@@ -194,24 +231,40 @@ export class MotionInput extends EventTarget {
     const s = this.swing;
     s.samples++;
 
-    if (mag > s.peak) {
-      s.peak = mag;
-      s.peakAt = now;
-      // Suunta luetaan kiihdytysvaiheesta: painotetaan näytteitä
-      // huippuun asti, jolloin jarrutusvaihe ei käännä suuntaa.
-      s.dirX = 0;
-      s.dirY = 0;
-      s.dirZ = 0;
-    }
-    if (now <= s.peakAt + 0.04) {
-      s.dirX += lin.x * mag;
-      s.dirY += lin.y * mag;
-      s.dirZ += lin.z * mag;
+    // Kiihtyvyys integroidaan nopeudeksi. Nopeus kertoo mihin puhelin
+    // todella liikkui; pelkkä kiihtyvyyden huippu ei kelpaa, koska
+    // heilautuksen voimakkain piikki on usein lopun jarrutus, joka osoittaa
+    // vastakkaiseen suuntaan.
+    s.vx += lin.x * dt;
+    s.vy += lin.y * dt;
+    s.vz += lin.z * dt;
+
+    // Vuoto estää anturin nollapoikkeamaa kasvamasta valenopeudeksi.
+    const leak = Math.exp(-dt / VELOCITY_LEAK);
+    s.vx *= leak;
+    s.vy *= leak;
+    s.vz *= leak;
+
+    const speed = Math.hypot(s.vx, s.vy, s.vz);
+
+    // Suunta kertyy nopeudella painotettuna integraalina vain siltä ajalta,
+    // kun puhelin oikeasti liikkuu. Yksittäinen viivästynyt anturitapahtuma
+    // ei näin käännä lyöntiä: aiemmin suunta luettiin huippunopeuden
+    // hetkestä, jolloin yksi iso piikki jarrutusvaiheessa riitti.
+    if (mag >= STILL_THRESHOLD) {
+      const w = speed * dt;
+      s.dirX += s.vx * w;
+      s.dirY += s.vy * w;
+      s.dirZ += s.vz * w;
+      if (speed > s.peakSpeed) s.peakSpeed = speed;
     }
 
-    // Puhelin lasketaan paikallaan olevaksi vasta kun liike on tyyntynyt
-    // yhtäjaksoisesti STILL_HOLD-ajan. Niin kauan kuin puhelinta liikutetaan,
-    // suuntaa ja voimaa vain kerätään talteen.
+    // Puhelin on paikallaan kun kiihtyvyys on pysynyt tyynenä yhtäjaksoisesti
+    // STILL_HOLD-ajan. Kädessä pidettävä puhelin ei pysy näin pitkään
+    // kiihtyvyydettömänä kesken liikkeen, joten tämä erottaa pysähdyksen
+    // luotettavasti ja ilman viivettä. Integroitua nopeutta ei käytetä tähän:
+    // siihen jää anturin nollapoikkeamasta jäännös, joka viivästyttäisi
+    // laukaisua sekunnilla.
     if (mag < STILL_THRESHOLD) {
       if (!s.stillSince) s.stillSince = now;
     } else {
@@ -221,7 +274,7 @@ export class MotionInput extends EventTarget {
 
     this.dispatchEvent(
       new CustomEvent('swingprogress', {
-        detail: { power: powerFromPeak(s.peak), moving: !s.stillSince, still },
+        detail: { power: powerFromSpeed(s.peakSpeed), moving: !s.stillSince, still },
       }),
     );
 
@@ -232,7 +285,7 @@ export class MotionInput extends EventTarget {
     const s = this.swing;
     if (!s) return;
     this._clearSwing();
-    if (s.samples < 2 || s.peak < PEAK_MIN) {
+    if (s.samples < 3 || s.peakSpeed < SWING_V_MIN) {
       this.dispatchEvent(new CustomEvent('swingcancel'));
       return;
     }
@@ -240,19 +293,26 @@ export class MotionInput extends EventTarget {
     // Laitteen koordinaatisto (puhelin vaaka-asennossa, näyttö ylöspäin):
     //   +x = puhelimen oikea reuna, +y = puhelimen yläreuna (eteenpäin)
     // Ruudun koordinaatistossa y kasvaa alaspäin, joten eteenpäin = -y.
-    let dx = s.dirX;
-    let dy = -s.dirY;
-    const len = Math.hypot(dx, dy);
-    let direction = null;
-    if (len > 1e-3) {
-      direction = { x: dx / len, y: dy / len };
-    }
+    // Kertymä on nopeuden suuntainen; normalisoidaan ja verrataan sen
+    // vaakaosuutta kokonaisuuteen.
+    const total = Math.hypot(s.dirX, s.dirY, s.dirZ) || 1;
+    const dx = s.dirX / total;
+    const dy = -s.dirY / total;
+    const flat = Math.hypot(dx, dy);
+
+    // Pystysuora ravistus ei kelpaa suunnaksi: vaaditaan että liikkeestä
+    // riittävä osa tapahtui radan tasossa.
+    const usable = s.peakSpeed >= SWING_V_MIN && flat >= 0.45;
+    const direction = usable ? { x: dx / flat, y: dy / flat } : null;
 
     this.dispatchEvent(
       new CustomEvent('swing', {
         detail: {
-          power: powerFromPeak(s.peak),
-          peak: s.peak,
+          // Teho lasketaan vaakasuorasta osuudesta, jotta pelkkä
+          // ylös-alas-heiluttelu ei tuota täyttä lyöntiä.
+          power: powerFromSpeed(s.peakSpeed * flat),
+          peak: s.peakSpeed,
+          flat,
           direction,
           duration: performance.now() / 1000 - s.start,
         },
@@ -261,7 +321,7 @@ export class MotionInput extends EventTarget {
   }
 }
 
-export function powerFromPeak(peak) {
-  const p = (peak - PEAK_MIN) / (PEAK_MAX - PEAK_MIN);
+export function powerFromSpeed(speed) {
+  const p = (speed - SWING_V_MIN) / (SWING_V_MAX - SWING_V_MIN);
   return Math.max(0, Math.min(1, p));
 }

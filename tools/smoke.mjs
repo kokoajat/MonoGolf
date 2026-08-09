@@ -159,13 +159,12 @@ for (let i = 0; i < SHOTS; i++) {
   }
   await page.waitForTimeout(200);
   await page.screenshot({ path: path.join(SHOT_DIR, '06-sensors-on.png') });
-  // Lupapainike katoaa kun lupa on myönnetty, eikä jätä tilamerkkiä jälkeensä.
-  if (await page.locator('#btnSensors').isVisible()) {
-    errors.push('anturipainike jäi näkyviin luvan jälkeen');
-  }
+  // Lupapainike katoaa valikosta kun lupa on myönnetty.
+  const sensorBtnHidden = await page.evaluate(() => document.querySelector('#btnSensors').hidden);
+  if (!sensorBtnHidden) errors.push('anturipainike jäi näkyviin luvan jälkeen');
 
-  // Pitkä, yhtäjaksoinen liike: lyönti ei saa lähteä ennen kuin puhelin
-  // pysähtyy, vaikka liikettä jatkettaisiin sekunnin ajan.
+  // Pitkä liike, jonka keskellä puhelin liikkuu tasaisella nopeudella:
+  // lyönti ei saa lähteä ennen kuin liike on oikeasti pysähtynyt.
   const sustained = await page.evaluate(async () => {
     const fire = (ay) =>
       window.dispatchEvent(
@@ -175,34 +174,32 @@ for (let i = 0; i < SHOTS; i++) {
         }),
       );
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    for (let i = 0; i < 20; i++) {
-      fire(0);
-      await sleep(16);
-    }
-    // ~1 s edestakaista heiluttelua
-    for (let i = 0; i < 60; i++) {
-      fire(i % 2 === 0 ? 14 : -12);
-      await sleep(16);
-    }
-    const during = {
-      strokes: window.game.strokes,
-      state: window.game.state,
-      swinging: !!window.game.motion.swing,
-      power: window.game.aim.power,
+    const run = async (list) => {
+      for (const a of list) {
+        fire(a);
+        await sleep(16);
+      }
     };
-    // puhelin pysähtyy
-    for (let i = 0; i < 16; i++) {
-      fire(0);
-      await sleep(16);
-    }
-    await sleep(150);
-    return { during, after: { strokes: window.game.strokes, state: window.game.state } };
+    await run(new Array(20).fill(0));
+    // ~1 s yhtäjaksoista heiluttelua: kiihtyvyys vaihtelee koko ajan,
+    // kuten kädessä liikkuvalla puhelimella.
+    const wave = [];
+    for (let i = 0; i < 60; i++) wave.push(14 * Math.sin((i / 60) * Math.PI * 2 * 2.5));
+    await run(wave);
+    const coasting = {
+      strokes: window.game.strokes,
+      swinging: !!window.game.motion.swing,
+      level: +window.game.motion.level.toFixed(2),
+    };
+    await run(new Array(24).fill(0)); // paikallaan
+    await sleep(200);
+    return { coasting, after: { strokes: window.game.strokes, state: window.game.state } };
   });
   console.log('pitkä liike:', JSON.stringify(sustained));
-  if (sustained.during.strokes !== 0) {
-    errors.push('lyönti lähti kesken liikkeen (pitäisi odottaa pysähtymistä)');
+  if (sustained.coasting.strokes !== 0) {
+    errors.push('lyönti lähti kesken jatkuvan liikkeen');
   }
-  if (!sustained.during.swinging) errors.push('pitkää liikettä ei tunnistettu');
+  if (!sustained.coasting.swinging) errors.push('pitkää liikettä ei tunnistettu');
   if (sustained.after.strokes !== 1) errors.push('lyönti ei lähtenyt puhelimen pysähtyessä');
 
   // Palautetaan väylä alkutilaan seuraavaa testiä varten.
@@ -233,7 +230,9 @@ for (let i = 0; i < SHOTS; i++) {
       await sleep(16);
     } // painovoiman suodatin asettuu
     // kiihdytys eteenpäin, jarrutus, ja sen jälkeen tasainen paikallaanolo
-    const profile = [4, 11, 19, 24, 22, 14, 4, -6, -12, -8, -3, -1].concat(new Array(14).fill(0));
+    const profile = [4, 11, 19, 24, 22, 14, 4, -14, -20, -22, -18, -14, -8, -2].concat(
+      new Array(24).fill(0),
+    );
     for (const a of profile) {
       fire(0, a, 0);
       await sleep(16);
@@ -287,7 +286,58 @@ for (let i = 0; i < SHOTS; i++) {
   }
 }
 
-// Tarkista tuloskortti
+// --- Suunta: takaveto ja jarrutus eivät saa kääntää lyöntiä ----------------
+{
+  await page.evaluate(() => {
+    window.game.hideCard();
+    window.game.loadHole(0);
+    window.game.mode = 'swing';
+    window.game.armIfReady();
+  });
+  const backswing = await page.evaluate(async () => {
+    const fire = (ay) =>
+      window.dispatchEvent(
+        new DeviceMotionEvent('devicemotion', {
+          accelerationIncludingGravity: { x: 0, y: ay, z: 9.81 },
+          interval: 16,
+        }),
+      );
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const run = async (list) => {
+      for (const a of list) {
+        fire(a);
+        await sleep(16);
+      }
+    };
+    await run(new Array(20).fill(0));
+    // Takaveto: puhelin liikkuu ensin taaksepäin ja pysähtyy.
+    await run([-7, -9, -7, 7, 9, 7]);
+    // Varsinainen heilautus eteenpäin, lopussa terävä jarrutus. Jarrutuksen
+    // huippukiihtyvyys on suurempi kuin kiihdytyksen – juuri tämä käänsi
+    // lyönnin suunnan ennen korjausta.
+    await run([10, 20, 26, 22, 12, -18, -28, -30, -18, -8]);
+    await run(new Array(24).fill(0));
+    await sleep(200);
+    const g = window.game;
+    return { strokes: g.strokes, vx: g.ball.vx, vy: g.ball.vy };
+  });
+  console.log('takaveto + jarrutus:', JSON.stringify(backswing));
+  if (backswing.strokes !== 1) errors.push('takavedollinen heilautus ei laukaissut lyöntiä');
+  if (backswing.vy >= 0) {
+    errors.push(`lyönti lähti väärään suuntaan takavedon jälkeen (vy=${backswing.vy})`);
+  }
+  await page
+    .waitForFunction(() => window.game.state !== 'rolling', null, { timeout: 30000 })
+    .catch(() => errors.push('takavetolyönti ei pysähtynyt'));
+  await page.evaluate(() => {
+    window.game.hideCard();
+    window.game.loadHole(0);
+  });
+}
+
+// Tarkista tuloskortti (painikkeet ovat rataskuvakkeen takana)
+await page.locator('#btnMenu').click();
+await page.waitForTimeout(120);
 await page.locator('#btnScore').click();
 await page.waitForTimeout(200);
 await page.screenshot({ path: path.join(SHOT_DIR, '05-scorecard.png') });
@@ -323,6 +373,75 @@ for (let h = 0; h < 18; h++) {
   }, h);
   await page.waitForTimeout(120);
   await page.screenshot({ path: path.join(SHOT_DIR, `hole-${String(h + 1).padStart(2, '0')}.png`) });
+}
+
+// --- Kierroksen jatkaminen ja nollaus --------------------------------------
+{
+  const KEY = 'monogolf.v1';
+
+  // Kesken jäänyt kierros: peli jatkaa oikealta väylältä ja kertoo siitä.
+  await page.evaluate(
+    ([key]) => {
+      const scores = new Array(18).fill(null);
+      for (let i = 0; i < 17; i++) scores[i] = 3;
+      localStorage.setItem(key, JSON.stringify({ scores, holeIndex: 17, best: {}, mode: 'touch' }));
+    },
+    [KEY],
+  );
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(400);
+  const introText = await page.locator('#overlayCard').innerText();
+  if (!introText.includes('väylältä 18')) {
+    errors.push('aloitusruutu ei kerro mistä väylältä kierros jatkuu');
+  }
+  await page.screenshot({ path: path.join(SHOT_DIR, '07-resume.png') });
+
+  // Alusta-valinta vie väylälle 1.
+  await page.getByRole('button', { name: /Aloita alusta väylältä 1/ }).click();
+  await page.getByRole('button', { name: 'Pelaa', exact: true }).click();
+  const afterRestart = await page.evaluate(() => window.game.holeIndex);
+  if (afterRestart !== 0) errors.push(`alusta aloitus vei väylälle ${afterRestart + 1}`);
+
+  // Nollauspainike: vahvistus ja kierroksen nollaus.
+  await page.evaluate(() => {
+    window.game.scores[0] = 4;
+    window.game.loadHole(5);
+  });
+  await page.locator('#btnMenu').click();
+  await page.waitForTimeout(120);
+  await page.screenshot({ path: path.join(SHOT_DIR, '09-menu.png') });
+  await page.locator('#btnNewGame').click();
+  await page.waitForTimeout(150);
+  await page.screenshot({ path: path.join(SHOT_DIR, '08-reset.png') });
+  await page.getByRole('button', { name: 'Nollaa kierros', exact: true }).click();
+  await page.waitForTimeout(150);
+  const afterReset = await page.evaluate(() => ({
+    hole: window.game.holeIndex,
+    scores: window.game.scores.filter((x) => x != null).length,
+  }));
+  if (afterReset.hole !== 0 || afterReset.scores !== 0) {
+    errors.push(`nollaus ei toiminut: ${JSON.stringify(afterReset)}`);
+  }
+
+  // Loppuun pelattu kierros ei saa avautua väylälle 18.
+  await page.evaluate(
+    ([key]) => {
+      localStorage.setItem(
+        key,
+        JSON.stringify({ scores: new Array(18).fill(3), holeIndex: 17, best: {}, mode: 'touch' }),
+      );
+    },
+    [KEY],
+  );
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(400);
+  const fresh = await page.evaluate(() => ({
+    hole: window.game.holeIndex,
+    scores: window.game.scores.filter((x) => x != null).length,
+  }));
+  if (fresh.hole !== 0 || fresh.scores !== 0) {
+    errors.push(`valmis kierros ei nollautunut: ${JSON.stringify(fresh)}`);
+  }
 }
 
 await browser.close();

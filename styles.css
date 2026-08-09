@@ -16,6 +16,11 @@
   box-sizing: border-box;
 }
 
+/* hidden-attribuutin pitää voittaa myös display: flex / grid -säännöt. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -41,6 +46,7 @@ body {
 
 #app {
   position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -52,12 +58,24 @@ body {
 
 /* --- Yläpalkki ---------------------------------------------------------- */
 
+/* Yläpalkki kelluu radan päällä, jotta pelialue alkaa heti ruudun ylälaidasta. */
 .topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 14px 8px;
+  padding: calc(8px + env(safe-area-inset-top)) 14px 18px;
+  background: linear-gradient(180deg, rgba(6, 16, 10, 0.85), rgba(6, 16, 10, 0));
+  pointer-events: none;
+}
+
+.topbar button {
+  pointer-events: auto;
 }
 
 .hole {
@@ -115,90 +133,114 @@ body {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
-  padding: 0 10px;
-  transition: padding 220ms ease;
-}
-
-/* Pallon vieriessä pelialue vie koko ruudun. */
-#app.is-playing .stage {
   padding: 0;
 }
 
-#app.is-playing #course {
-  border-radius: 0;
-}
-
-.play-hud {
+/* Tila ja mittarit kelluvat radan päällä, jotta rata saa koko ruudun. */
+.hud {
   position: absolute;
   left: 50%;
-  bottom: 14px;
-  transform: translateX(-50%) translateY(8px);
-  margin: 0;
-  padding: 7px 14px;
-  max-width: calc(100% - 32px);
-  border-radius: 999px;
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(100% - 20px, 460px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 14px;
+  border-radius: 16px;
   background: rgba(8, 20, 12, 0.72);
   border: 1px solid var(--line);
-  color: var(--text);
-  font-size: 13px;
-  text-align: center;
-  backdrop-filter: blur(4px);
-  opacity: 0;
+  backdrop-filter: blur(6px);
   pointer-events: none;
   transition:
     opacity 200ms ease,
     transform 200ms ease;
 }
 
-#app.is-playing .play-hud {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
+.hud-status {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.hud-meters {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* Pallon vieriessä mittarit piiloon – jäljelle jää pelkkä tilateksti. */
+#app.is-playing .hud-meters {
+  display: none;
+}
+
+#app.is-playing .hud {
+  width: auto;
+  max-width: calc(100% - 32px);
+  border-radius: 999px;
+}
+
+#course {
+  border-radius: 0;
 }
 
 #course {
   display: block;
   width: 100%;
   height: 100%;
-  border-radius: var(--radius);
   touch-action: none;
   background: #17281c;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 
 /* --- Alapaneeli --------------------------------------------------------- */
 
-.panel {
-  flex: 0 0 auto;
-  padding: 10px 14px calc(12px + env(safe-area-inset-bottom));
+/* Valikkolevy nousee alhaalta rataskuvakkeesta. */
+.menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  padding: 12px 14px calc(14px + env(safe-area-inset-bottom));
   background: var(--panel);
   border-top: 1px solid var(--line);
-  margin-top: 10px;
   border-radius: var(--radius) var(--radius) 0 0;
-  transition:
-    opacity 200ms ease,
-    transform 240ms ease;
+  box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.45);
 }
 
-/* Pelin ajaksi paneeli ja yläpalkki väistyvät pois tieltä. */
-#app.is-playing .panel {
+.menu[hidden] {
   display: none;
 }
 
-#app.is-playing .topbar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 5;
-  padding: 8px 14px;
-  background: linear-gradient(180deg, rgba(6, 16, 10, 0.82), rgba(6, 16, 10, 0));
-  pointer-events: none;
+.menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
 }
 
-.status {
-  margin: 2px 0 4px;
-  font-size: 14px;
-  min-height: 1.3em;
+.menu-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+button.icon {
+  min-height: 36px;
+  min-width: 40px;
+  padding: 4px 8px;
+  font-size: 18px;
+  line-height: 1;
+  background: transparent;
+  border-color: transparent;
+}
+
+button.icon:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+#btnMenu {
+  margin-left: 2px;
 }
 
 .hint {
@@ -279,6 +321,18 @@ body {
   grid-column: span 3;
 }
 
+#btnNewGame {
+  grid-column: 1 / -1;
+}
+
+button.ghost {
+  min-height: 38px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+}
+
 button {
   min-height: 44px;
   padding: 10px 12px;
@@ -310,8 +364,8 @@ button:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .stage,
-  .panel,
-  .play-hud,
+  .hud,
+  .menu,
   .fill {
     transition: none;
   }

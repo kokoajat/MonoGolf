@@ -68,9 +68,13 @@ export class Game {
       btnReset: root.querySelector('#btnReset'),
       btnSound: root.querySelector('#btnSound'),
       btnScore: root.querySelector('#btnScore'),
+      btnNewGame: root.querySelector('#btnNewGame'),
       overlay: root.querySelector('#overlay'),
       overlayCard: root.querySelector('#overlayCard'),
-      playHud: root.querySelector('#playHud'),
+      hud: root.querySelector('#hud'),
+      menu: root.querySelector('#menu'),
+      btnMenu: root.querySelector('#btnMenu'),
+      btnMenuClose: root.querySelector('#btnMenuClose'),
     };
     this.root = root;
     this.playing = false;
@@ -118,6 +122,12 @@ export class Game {
         this.holeIndex = Math.min(COURSES.length - 1, Math.max(0, data.holeIndex));
       }
       if (data.best && typeof data.best === 'object') this.best = data.best;
+      // Loppuun pelattu kierros aloitetaan seuraavalla kerralla alusta,
+      // muuten peli avautuisi väylälle 18 ilman mitään pelattavaa.
+      if (this.scores.every((x) => x != null)) {
+        this.scores = new Array(COURSES.length).fill(null);
+        this.holeIndex = 0;
+      }
       if (typeof data.soundOn === 'boolean') this.soundOn = data.soundOn;
       if (typeof data.mode === 'string' && MODES.some((m) => m.id === data.mode)) {
         this.mode = data.mode;
@@ -149,8 +159,20 @@ export class Game {
   bindUI() {
     this.el.btnSensors.addEventListener('click', () => this.enableSensors());
     this.el.btnMode.addEventListener('click', () => this.cycleMode());
-    this.el.btnReset.addEventListener('click', () => this.resetHole());
-    this.el.btnScore.addEventListener('click', () => this.showScorecard());
+    this.el.btnReset.addEventListener('click', () => {
+      this.setMenuOpen(false);
+      this.resetHole();
+    });
+    this.el.btnScore.addEventListener('click', () => {
+      this.setMenuOpen(false);
+      this.showScorecard();
+    });
+    this.el.btnNewGame.addEventListener('click', () => {
+      this.setMenuOpen(false);
+      this.confirmNewGame();
+    });
+    this.el.btnMenu.addEventListener('click', () => this.toggleMenu());
+    this.el.btnMenuClose.addEventListener('click', () => this.setMenuOpen(false));
     this.el.btnSound.addEventListener('click', () => {
       this.soundOn = !this.soundOn;
       this.sfx.setEnabled(this.soundOn);
@@ -324,7 +346,18 @@ export class Game {
 
   setStatus(text) {
     this.el.status.textContent = text;
-    this.el.playHud.textContent = text;
+  }
+
+  /** Valikko peittää pelialueen, joten anturit eivät saa olla viritettyinä. */
+  setMenuOpen(open) {
+    this.el.menu.hidden = !open;
+    this.el.btnMenu.setAttribute('aria-expanded', String(open));
+    if (open) this.motion.disarm();
+    else this.armIfReady();
+  }
+
+  toggleMenu() {
+    this.setMenuOpen(this.el.menu.hidden);
   }
 
   setPower(p) {
@@ -373,7 +406,8 @@ export class Game {
 
   armIfReady() {
     const wantsMotion = this.mode !== 'touch';
-    if (this.state === 'ready' && wantsMotion && this.motion.permission === 'granted') {
+    const uiBlocked = !this.el.overlay.hidden || !this.el.menu.hidden;
+    if (!uiBlocked && this.state === 'ready' && wantsMotion && this.motion.permission === 'granted') {
       this.motion.arm();
     } else {
       this.motion.disarm();
@@ -406,6 +440,7 @@ export class Game {
     this.shotTime = 0;
     this.state = 'rolling';
     this.motion.disarm();
+    this.setMenuOpen(false);
     this.renderer.clearTrail();
     this.aim.visible = false;
     this.sfx.resume();
@@ -555,6 +590,7 @@ export class Game {
     }
     card.appendChild(row);
     this.el.overlay.hidden = false;
+    if (this.el.menu) this.el.menu.hidden = true;
     // Kortin ollessa auki heilautus ei saa laukaista lyöntiä.
     this.motion.disarm();
   }
@@ -564,6 +600,40 @@ export class Game {
     this.armIfReady();
   }
 
+  /** Koko pelin nollaus – varmistetaan, ettei se tapahdu vahingossa. */
+  confirmNewGame() {
+    const hasRecords = Object.keys(this.best).length > 0;
+    this.showCard({
+      title: 'Nollataanko peli?',
+      lines: [
+        'Kierroksen tulokset nollataan ja peli alkaa väylältä 1.',
+        hasRecords
+          ? 'Väyläkohtaiset ennätyksesi säilyvät, ellet nollaa niitä erikseen.'
+          : 'Ennätyksiä ei ole vielä tallennettu.',
+      ],
+      actions: [
+        {
+          label: 'Nollaa kierros',
+          primary: true,
+          onClick: () => this.newGame(false),
+        },
+        ...(hasRecords
+          ? [{ label: 'Nollaa kierros ja ennätykset', onClick: () => this.newGame(true) }]
+          : []),
+        { label: 'Peruuta', onClick: () => this.hideCard() },
+      ],
+    });
+  }
+
+  newGame(clearRecords) {
+    this.scores = new Array(COURSES.length).fill(null);
+    if (clearRecords) this.best = {};
+    this.hideCard();
+    this.loadHole(0);
+    this.saveProgress();
+    this.startHoleIntro();
+  }
+
   showIntro() {
     const sensorText = motionSupported()
       ? needsMotionPermission()
@@ -571,33 +641,55 @@ export class Game {
         : 'Liikeanturit löytyivät. Ota ne käyttöön alta.'
       : 'Tästä selaimesta ei löydy liikeantureita – peli toimii myös kosketuksella.';
 
+    // Kesken jäänyt kierros jatkuu, mutta se sanotaan ääneen – muuten peli
+    // avautuisi selittämättä keskelle kierrosta.
+    const resumed = this.holeIndex > 0 || this.scores.some((x) => x != null);
+    const lines = [
+      '18 väylää minigolfia superpallolla, joka kimpoaa laidoista oikean fysiikan mukaan.',
+      'Pidä puhelinta vaakatasossa näyttö ylöspäin ja heilauta sitä siihen suuntaan, johon haluat lyödä. Heilautuksen voimakkuus on lyönnin voima, ja pallo lähtee liikkeelle sillä hetkellä kun pysäytät puhelimen.',
+      'Lyönnin jälkeen anturit kytkeytyvät pois – pallo vierii rauhassa loppuun asti.',
+      sensorText,
+    ];
+    if (resumed) {
+      lines.splice(3, 0, `Kesken jäänyt kierros jatkuu väylältä ${this.holeIndex + 1}.`);
+    }
+
+    const start = (touchOnly) => async () => {
+      if (touchOnly) {
+        this.mode = 'touch';
+        this.updateChrome();
+      } else {
+        await this.enableSensors();
+      }
+      this.hideCard();
+      this.startHoleIntro();
+    };
+
     this.showCard({
       title: 'MonoGolf',
-      lines: [
-        '18 väylää minigolfia superpallolla, joka kimpoaa laidoista oikean fysiikan mukaan.',
-        'Pidä puhelinta vaakatasossa näyttö ylöspäin ja heilauta sitä siihen suuntaan, johon haluat lyödä. Heilautuksen voimakkuus on lyönnin voima, ja pallo lähtee liikkeelle sillä hetkellä kun pysäytät puhelimen.',
-        'Lyönnin jälkeen anturit kytkeytyvät pois – pallo vierii rauhassa loppuun asti.',
-        sensorText,
-      ],
+      lines,
       actions: [
         {
-          label: 'Ota anturit käyttöön ja aloita',
+          label: resumed
+            ? `Jatka väylältä ${this.holeIndex + 1}`
+            : 'Ota anturit käyttöön ja aloita',
           primary: true,
-          onClick: async () => {
-            await this.enableSensors();
-            this.hideCard();
-            this.startHoleIntro();
-          },
+          onClick: start(false),
         },
-        {
-          label: 'Pelaa kosketuksella',
-          onClick: () => {
-            this.mode = 'touch';
-            this.updateChrome();
-            this.hideCard();
-            this.startHoleIntro();
-          },
-        },
+        { label: 'Pelaa kosketuksella', onClick: start(true) },
+        ...(resumed
+          ? [
+              {
+                label: 'Aloita alusta väylältä 1',
+                onClick: () => {
+                  this.scores = new Array(COURSES.length).fill(null);
+                  this.loadHole(0);
+                  this.hideCard();
+                  this.startHoleIntro();
+                },
+              },
+            ]
+          : []),
       ],
     });
   }
