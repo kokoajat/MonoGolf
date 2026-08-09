@@ -202,6 +202,103 @@ console.log(`ruutuja ${roundTrip.chunks}, kokoaminen epäjärjestyksessä ${roun
 if (roundTrip.accepted !== true) errors.push('koottu SDP ei kelvannut selaimelle');
 if (!roundTrip.assembled) errors.push('ruutujen kokoaminen epäonnistui');
 
+// --- Gyro-lyönti: tähtäys, osuma ja väärät laukaisut ------------------------
+{
+  const golf = await controller.evaluate(async () => {
+    const { GolfSwing } = window.MonoGolf;
+    const source = new EventTarget();
+    const swing = new GolfSwing();
+    swing.attach(source);
+    const events = [];
+    swing.addEventListener('impact', (e) => events.push({ t: 'impact', ...e.detail }));
+    swing.addEventListener('phase', (e) => events.push({ t: 'phase', ...e.detail }));
+
+    const dt = 1 / 60;
+    // rotationRate: alpha = z-akseli, beta = x, gamma = y (astetta/s)
+    const feed = (alpha, beta, gamma, seconds) => {
+      for (let t = 0; t < seconds; t += dt) {
+        source.dispatchEvent(
+          new CustomEvent('raw', {
+            detail: {
+              rotationRate: { alpha, beta, gamma },
+              gravity: { x: 0, y: 0, z: 9.81 },
+              dt,
+            },
+          }),
+        );
+      }
+    };
+
+    feed(0, 0, 0, 0.1); // gyro havaitaan
+    swing.zero({ x: 0, y: 0, z: 9.81 }); // pystyakseli = laitteen z
+
+    // 1. Pelkkä kääntely tähtää eikä saa laukaista lyöntiä.
+    feed(60, 0, 0, 0.5); // 30° pystyakselin ympäri
+    const aimAfterTurn = (swing.aim * 180) / Math.PI;
+    const firedOnTurn = events.some((e) => e.t === 'impact');
+
+    // 2. Taaksevienti ja paluu lyöntiasentoon.
+    feed(0, 200, 0, 0.5); // 100° taakse
+    const phaseAfterBack = swing.phase;
+    feed(0, -600, 0, 0.18); // takaisin nollaan kovaa
+    const impact = events.find((e) => e.t === 'impact');
+
+    // 3. Lyönnin jälkeen palataan tähtäystilaan eikä tähtäys hyppää.
+    feed(0, 0, 0, 0.5);
+    const aimAfterSwing = (swing.aim * 180) / Math.PI;
+
+    return {
+      aimAfterTurn,
+      firedOnTurn,
+      phaseAfterBack,
+      impact: impact ? { power: +impact.power.toFixed(2) } : null,
+      phaseAfterSwing: swing.phase,
+      aimAfterSwing,
+    };
+  });
+  console.log('gyro-lyönti:', JSON.stringify(golf));
+  if (Math.abs(Math.abs(golf.aimAfterTurn) - 30) > 4) {
+    errors.push(`tähtäyskulma ${golf.aimAfterTurn.toFixed(1)}°, odotettu ±30°`);
+  }
+  if (golf.firedOnTurn) errors.push('pelkkä kääntely laukaisi lyönnin');
+  if (golf.phaseAfterBack !== 'backswing') errors.push('taaksevientiä ei tunnistettu');
+  if (!golf.impact) errors.push('osumaa ei tunnistettu paluuhetkellä');
+  else if (golf.impact.power < 0.4 || golf.impact.power > 1) {
+    errors.push(`osuman teho ${golf.impact.power} ei ole järkevä`);
+  }
+  if (golf.phaseAfterSwing !== 'address') errors.push('lyönnin jälkeen ei palattu tähtäykseen');
+  if (Math.abs(golf.aimAfterSwing - golf.aimAfterTurn) > 4) {
+    errors.push('tähtäys hyppäsi lyönnin jälkeen');
+  }
+}
+
+// --- Näyttö kääntää tähtäystä mailan kulman mukaan --------------------------
+if (opened[0] && opened[1]) {
+  const aimed = await host.evaluate(async () => {
+    const g = window.game;
+    g.hideCard();
+    g.loadHole(0);
+    g.setRemote(window.link);
+    const fire = (msg) =>
+      window.link.dispatchEvent(new CustomEvent('message', { detail: msg }));
+    fire({ t: 'zero' });
+    const atZero = Math.atan2(g.aim.dirY, g.aim.dirX);
+    const toCup = Math.atan2(g.world.cup.y - g.ball.y, g.world.cup.x - g.ball.x);
+    fire({ t: 'aim', angle: 0.5 });
+    const turned = Math.atan2(g.aim.dirY, g.aim.dirX);
+    return { atZero, toCup, turned };
+  });
+  const d = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+  console.log(
+    `nollaus osoittaa reikään: ${d(aimed.atZero, aimed.toCup) < 0.01 ? 'kyllä' : 'ei'}, ` +
+      `0,5 rad kääntö: ${d(aimed.turned, aimed.atZero).toFixed(3)} rad`,
+  );
+  if (d(aimed.atZero, aimed.toCup) > 0.01) errors.push('nollaus ei suunnannut reikään');
+  if (Math.abs(d(aimed.turned, aimed.atZero) - 0.5) > 0.01) {
+    errors.push('gyrokulma ei kääntänyt tähtäystä oikein');
+  }
+}
+
 // --- Ruudulla näkyvä QR-koodi luetaan takaisin pikseleistä ------------------
 {
   const shown = await host.evaluate(async () => {

@@ -11,6 +11,7 @@ import { drawQR } from './qr.js';
 import { RemoteLink, toChunks, ChunkCollector } from './remote.js';
 import { QrScanner, qrFormatAvailable } from './scanner.js';
 import { MotionInput, motionSupported } from './sensors.js';
+import { GolfSwing } from './golfswing.js';
 
 const FRAME_MS = 400; // QR-ruutujen vaihtoväli, kun koodi ei mahdu yhteen
 
@@ -26,12 +27,17 @@ export class RemoteUI {
     this.frameIndex = 0;
     this.frameTimer = null;
     this.motion = null;
+    this.golf = null;
+    this.swingMode = 'golf'; // 'golf' | 'heilautus'
     this.lastMotionSent = 0;
+    this.lastAimSent = 0;
 
     this.el.remoteClose.addEventListener('click', () => this.cancel());
     this.el.btnRoleScreen.addEventListener('click', () => this.startHost());
     this.el.btnRoleClub.addEventListener('click', () => this.startController());
     this.el.controllerLeave.addEventListener('click', () => this.cancel());
+    this.el.controllerZero.addEventListener('click', () => this.zeroStance());
+    this.el.controllerMode.addEventListener('click', () => this.toggleSwingMode());
   }
 
   // --- Näkymän hallinta -----------------------------------------------------
@@ -55,6 +61,10 @@ export class RemoteUI {
     this.link = null;
     this.role = null;
     this.collector.reset();
+    if (this.golf) {
+      this.golf.detach();
+      this.golf = null;
+    }
     if (this.motion) {
       this.motion.stop();
       this.motion = null;
@@ -250,19 +260,96 @@ export class RemoteUI {
         'Anturilupa puuttuu. Salli liikeanturit ja yhdistä uudelleen.';
       return;
     }
+
+    // Liikemittari näytölle kummassakin tilassa.
     this.motion.addEventListener('motion', (e) => {
       const now = performance.now();
       if (now - this.lastMotionSent < 100) return;
       this.lastMotionSent = now;
       this.link.send({ t: 'motion', level: e.detail.level });
     });
-    this.motion.addEventListener('swingprogress', (e) => this.setPower(e.detail.power));
+
+    // Vanha tila: teho heilautuksen nopeudesta, lyönti kun ohjain pysähtyy.
+    this.motion.addEventListener('swingprogress', (e) => {
+      if (this.swingMode === 'heilautus') this.setPower(e.detail.power);
+    });
     this.motion.addEventListener('swingcancel', () => this.setPower(0));
     this.motion.addEventListener('swing', (e) => {
-      this.link.send({ t: 'swing', power: e.detail.power, peak: e.detail.peak });
+      if (this.swingMode !== 'heilautus') return;
+      this.link.send({ t: 'swing', power: e.detail.power });
       navigator.vibrate?.(40);
     });
-    this.el.controllerStatus.textContent = 'Valmis. Ota lyöntiasento ja heilauta.';
+
+    // Golf-tila: gyro antaa suunnan, osuma tulee kun maila palaa
+    // lyöntiasentoon.
+    this.golf = new GolfSwing();
+    this.golf.attach(this.motion);
+    this.golf.addEventListener('aim', (e) => {
+      const now = performance.now();
+      this.setNeedle(e.detail.angle);
+      if (now - this.lastAimSent < 60) return;
+      this.lastAimSent = now;
+      this.link.send({ t: 'aim', angle: e.detail.angle });
+    });
+    this.golf.addEventListener('phase', (e) => this.setPhase(e.detail.phase));
+    this.golf.addEventListener('impact', (e) => {
+      this.setPower(e.detail.power);
+      this.link.send({ t: 'swing', power: e.detail.power });
+      navigator.vibrate?.(60);
+    });
+
+    this.applySwingMode();
+  }
+
+  toggleSwingMode() {
+    this.swingMode = this.swingMode === 'golf' ? 'heilautus' : 'golf';
+    this.applySwingMode();
+  }
+
+  applySwingMode() {
+    const golf = this.swingMode === 'golf';
+    this.el.controllerMode.textContent = golf ? 'Tila: golf-lyönti' : 'Tila: heilautus';
+    this.el.controllerZero.hidden = !golf;
+    this.el.controller.classList.toggle('golf', golf);
+    if (!golf && this.golf) this.golf.stop();
+    this.setPower(0);
+    this.el.controllerStatus.textContent = golf
+      ? 'Ota lyöntiasento ja paina Nollaa lyöntiasento.'
+      : 'Heilauta ohjainta. Pallo lähtee kun pysäytät sen.';
+    this.link?.send({ t: 'mode', mode: this.swingMode });
+  }
+
+  /** Nollaa lyöntiasennon: tästä kohdasta lasketaan suunta ja osuma. */
+  zeroStance() {
+    if (!this.golf) return;
+    if (!this.golf.hasGyro) {
+      this.el.controllerStatus.textContent =
+        'Gyroa ei löytynyt tästä laitteesta. Vaihda heilautustilaan.';
+      return;
+    }
+    this.golf.zero(this.motion.gravity);
+    this.setNeedle(0);
+    this.link.send({ t: 'zero' });
+    navigator.vibrate?.(30);
+    this.el.controllerStatus.textContent =
+      'Lyöntiasento nollattu. Käännä ohjainta tähdätäksesi ja lyö.';
+  }
+
+  setNeedle(angle) {
+    // Nuoli kääntyy samaan suuntaan kuin tähtäys ruudulla.
+    this.el.aimNeedle.setAttribute('transform', `rotate(${(angle * 180) / Math.PI})`);
+  }
+
+  setPhase(phase) {
+    const c = this.el.controller;
+    c.classList.toggle('phase-backswing', phase === 'backswing');
+    const labels = {
+      idle: 'Nollaa lyöntiasento',
+      address: 'Tähtää ja lyö',
+      backswing: 'Taaksevienti',
+      follow: 'Lyönti!',
+    };
+    this.el.swingPhase.textContent = labels[phase] || '';
   }
 
   setPower(p) {

@@ -120,11 +120,25 @@
           <span id="controllerStrokes"></span>
         </div>
         <div class="controller-main">
-          <div class="swing-ring"><span>Heilauta</span></div>
+          <!-- Tähtäyskiekko: nuoli osoittaa mihin pallo lähtee. -->
+          <div class="swing-ring" id="swingRing">
+            <svg viewBox="-50 -50 100 100" aria-hidden="true">
+              <circle class="dial" cx="0" cy="0" r="42" />
+              <line class="tick" x1="0" y1="-42" x2="0" y2="-34" />
+              <g id="aimNeedle">
+                <path class="needle" d="M0,-36 L6,6 L0,0 L-6,6 Z" />
+              </g>
+            </svg>
+            <span class="ring-label" id="swingPhase">Nollaa lyöntiasento</span>
+          </div>
           <p class="controller-status" id="controllerStatus"></p>
         </div>
         <div class="bar wide"><div class="fill power" id="controllerPower"></div></div>
-        <button id="controllerLeave" class="ghost">Katkaise yhteys</button>
+        <button id="controllerZero" class="primary big">Nollaa lyöntiasento</button>
+        <div class="controls">
+          <button id="controllerMode">Tila: golf-lyönti</button>
+          <button id="controllerLeave" class="ghost">Katkaise yhteys</button>
+        </div>
       </section>
 
       <div id="overlay" class="overlay" hidden>

@@ -202,6 +202,17 @@ export class MotionInput extends EventTarget {
     const mag = Math.hypot(lin.x, lin.y, lin.z);
     this.level = mag;
     this.dispatchEvent(new CustomEvent('motion', { detail: { level: mag } }));
+    // Raakadata gyropohjaista lyöntiä varten (ks. golfswing.js).
+    this.dispatchEvent(
+      new CustomEvent('raw', {
+        detail: {
+          lin,
+          gravity: this.gravity,
+          rotationRate: e.rotationRate,
+          dt: Math.max(0.004, Math.min(0.05, dt)),
+        },
+      }),
+    );
 
     if (!this.armed) return;
     this._trackSwing(lin, mag, now, Math.max(0.004, Math.min(0.05, dt)));

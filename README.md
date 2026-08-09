@@ -120,9 +120,33 @@ itsestään.
 ## Kaukosäädin: toinen puhelin mailaksi
 
 Peliä voi pelata kahdella puhelimella: toinen on **näyttö** (pöydällä tai tuettuna) ja
-toinen **maila**, jota heilautetaan oikeassa golfin lyöntiasennossa. Suunta asetetaan
-näytön ruudulta sormella ja voima tulee mailan heilautuksesta; mailan asentoa
-lyöntiasennossa ei voi päätellä luotettavasti, joten sitä ei käytetä suuntaan.
+toinen **maila**, jota heilautetaan oikeassa golfin lyöntiasennossa.
+
+### Golf-lyönti (mailan oletustila)
+
+Malli vastaa oikeaa lyöntiä:
+
+1. Ota lyöntiasento ja paina **Nollaa lyöntiasento**. Tämä kohta on kuvitteellisen
+   pallon paikka mailan lavan kohdalla, ja siitä lasketaan sekä suunta että osuma.
+2. **Käännä ohjainta** – tähtäys kääntyy mukana. Nollaushetkellä tähtäys osoittaa
+   reikään, ja kierto pystyakselin ympäri kääntää sitä siitä. Mailan tähtäyskiekko ja
+   näytön tähtäysviiva näyttävät suunnan.
+3. **Lyö.** Taaksevienti tunnistetaan siitä, että maila poikkeaa lyöntiasennosta, ja
+   **pallo lähtee sillä hetkellä kun maila palaa takaisin lyöntiasentoon.** Voima
+   lasketaan alaslyönnin huippukulmanopeudesta.
+
+Suunta ja osuma luetaan gyrosta, ei kiihtyvyysanturista: gyro mittaa kiertoa suoraan
+eikä sekoa lyönnin kiihtyvyyksistä, toisin kuin painovoimasta pääteltävä asento. Asentoa
+seurataan integroimalla kulmanopeus kvaternioksi, joka jaetaan pystyakselin suhteen
+kahteen osaan – kierto akselin ympäri on tähtäys, poikkeama siitä on lyöntiliike. Näin
+tähtäys ei liiku lyönnin aikana eikä lyönti synny pelkästä kääntelystä.
+
+Ohjaimen toinen tila (**Tila: heilautus**) on sama kuin yhden puhelimen ohjaus: teho
+heilautuksen nopeudesta ja suunta näytön ruudulta sormella. Se kelpaa varatilaksi, jos
+laitteesta ei löydy gyroa.
+
+Kalibrointiarvot ovat `src/golfswing.js`:n alussa: taakseviennin kynnys 35°, osuma-alue
+12°, ja teho välillä 110–800 °/s.
 
 Yhteys on **suora laitteiden välinen WebRTC-datakanava** – välityspalvelinta ei ole.
 Kättely tehdään QR-koodeilla valikon **Kaukosäädin**-painikkeesta:
@@ -217,6 +241,7 @@ src/render.js       canvas-piirto
 src/audio.js        WebAudio-tehosteet
 src/game.js         tilakone, syötteet ja käyttöliittymä
 src/qr.js           QR-koodin muodostus (ei riippuvuuksia)
+src/golfswing.js    gyropohjainen tähtäys ja osuman tunnistus
 src/remote.js       WebRTC-yhteys ja SDP:n tiivistys QR-kokoiseksi
 src/scanner.js      QR-koodin luku kameralla (BarcodeDetector)
 src/remoteui.js     laiteparin muodostus ja mailapuhelimen näkymä
@@ -252,8 +277,11 @@ vasten ja vapaiden datamoduulien määrän – jsQR:n omassa taulukossa on virhe
 
 `tools/remotetest.mjs` avaa kaksi selainsivua, muodostaa niiden välille oikean
 WebRTC-datakanavan (QR ohitetaan siirtämällä tiiviste suoraan) ja varmistaa, että mailan
-heilautus laukaisee lyönnin tähtäyssuuntaan ja että maila saa pelin tilannekuvan. Lopuksi
-se lukee ruudulla näkyvän QR-koodin takaisin pikseleistä ja vertaa sitä parikoodiin.
+heilautus laukaisee lyönnin tähtäyssuuntaan ja että maila saa pelin tilannekuvan. Se
+syöttää gyro-lyönnille synteettistä kulmanopeutta ja tarkistaa, että kääntely kääntää
+tähtäystä muttei laukaise lyöntiä, että taaksevienti tunnistetaan, että osuma syntyy
+paluuhetkellä järkevällä teholla ja ettei tähtäys hyppää lyönnin jälkeen. Lopuksi se
+lukee ruudulla näkyvän QR-koodin takaisin pikseleistä ja vertaa sitä parikoodiin.
 
 `tools/smoke.mjs` käynnistää pelin Chromiumissa, pelaa kosketuslyöntejä, syöttää
 synteettisiä `devicemotion`-tapahtumia ja varmistaa, että heilautus laukaisee lyönnin

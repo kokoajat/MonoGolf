@@ -98,6 +98,10 @@ export class Game {
       controllerStatus: root.querySelector('#controllerStatus'),
       controllerPower: root.querySelector('#controllerPower'),
       controllerLeave: root.querySelector('#controllerLeave'),
+      controllerZero: root.querySelector('#controllerZero'),
+      controllerMode: root.querySelector('#controllerMode'),
+      swingPhase: root.querySelector('#swingPhase'),
+      aimNeedle: root.querySelector('#aimNeedle'),
       overlay: root.querySelector('#overlay'),
       overlayCard: root.querySelector('#overlayCard'),
       topbar: root.querySelector('.topbar'),
@@ -111,6 +115,8 @@ export class Game {
 
     this.remote = null;
     this.remoteUI = null;
+    this.remoteBaseAim = null;
+    this.remoteSwingMode = 'golf';
     this.renderer = new Renderer(this.el.canvas);
     this.sfx = new Sfx();
     this.motion = new MotionInput();
@@ -517,6 +523,7 @@ export class Game {
     this.strokes = 0;
     this.safeSpot = { x: this.ball.x, y: this.ball.y };
     this.shotTime = 0;
+    this.remoteBaseAim = null;
     this.renderer.resetView();
     this.renderer.resize(this.world);
     this.aim = {
@@ -1054,6 +1061,24 @@ export class Game {
   }
 
   onRemoteMessage(msg) {
+    if (msg.t === 'zero') {
+      // Ohjain nollattiin lyöntiasennossa: perussuunta osoittaa reikään,
+      // ja gyron kulma kääntää tähtäystä siitä.
+      const dx = this.world.cup.x - this.ball.x;
+      const dy = this.world.cup.y - this.ball.y;
+      this.remoteBaseAim = Math.atan2(dy, dx);
+      this.applyRemoteAim(0);
+      this.setStatus('Lyöntiasento nollattu. Käännä mailaa tähdätäksesi.');
+      return;
+    }
+    if (msg.t === 'aim') {
+      this.applyRemoteAim(msg.angle);
+      return;
+    }
+    if (msg.t === 'mode') {
+      this.remoteSwingMode = msg.mode;
+      return;
+    }
     if (msg.t === 'swing') {
       if (this.state !== 'ready' || !this.el.overlay.hidden || !this.el.menu.hidden) return;
       this.shoot(this.aim.dirX, this.aim.dirY, msg.power);
@@ -1063,6 +1088,20 @@ export class Game {
       this.el.motionFill.style.width = `${level * 100}%`;
       this.el.motionRow.hidden = false;
     }
+  }
+
+  /** Kääntää tähtäyksen mailan gyrokulman mukaan. */
+  applyRemoteAim(angle) {
+    if (this.state !== 'ready') return;
+    if (this.remoteBaseAim == null) {
+      const dx = this.world.cup.x - this.ball.x;
+      const dy = this.world.cup.y - this.ball.y;
+      this.remoteBaseAim = Math.atan2(dy, dx);
+    }
+    const a = this.remoteBaseAim + angle;
+    this.aim.dirX = Math.cos(a);
+    this.aim.dirY = Math.sin(a);
+    this.aim.visible = true;
   }
 
   /** Lähettää mailalle tilannekuvan; vain muutokset menevät läpi. */

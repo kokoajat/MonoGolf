@@ -7,6 +7,7 @@ import {
   toChunks,
   ChunkCollector,
 } from './remote.js';
+import { GolfSwing } from './golfswing.js';
 
 function start() {
   const root = document.getElementById('app');
@@ -29,6 +30,7 @@ function start() {
     unpackDescription,
     toChunks,
     ChunkCollector,
+    GolfSwing,
   };
 
   // Service worker tekee pelistä asennettavan ja pelattavan ilman verkkoa.

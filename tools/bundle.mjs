@@ -24,6 +24,7 @@ const MODULES = [
   'src/audio.js',
   'src/render.js',
   'src/qr.js',
+  'src/golfswing.js',
   'src/remote.js',
   'src/scanner.js',
   'src/remoteui.js',
@@ -43,9 +44,34 @@ function stripModuleSyntax(source, file) {
   return out.trim();
 }
 
+/**
+ * Ylimmän tason nimet moduulista. Kooste sijoittaa kaikki moduulit samaan
+ * näkyvyysalueeseen, joten sama nimi kahdessa moduulissa on syntaksivirhe,
+ * joka kaataa koko sivun. Tarkistus tehdään käännösaikana, koska ajossa se
+ * näkyisi vain tyhjänä ruutuna.
+ */
+function topLevelNames(source) {
+  const names = new Set();
+  const re = /^(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm;
+  let m;
+  while ((m = re.exec(source))) names.add(m[1]);
+  return names;
+}
+
+const seenNames = new Map();
 const parts = MODULES.map((rel) => {
   const src = fs.readFileSync(path.join(root, rel), 'utf8');
-  return `// ===== ${rel} ${'='.repeat(Math.max(0, 66 - rel.length))}\n${stripModuleSyntax(src, rel)}`;
+  const stripped = stripModuleSyntax(src, rel);
+  for (const name of topLevelNames(stripped)) {
+    if (seenNames.has(name)) {
+      throw new Error(
+        `Nimitörmäys koosteessa: "${name}" määritellään sekä tiedostossa ` +
+          `${seenNames.get(name)} että ${rel}. Nimeä toinen uudelleen.`,
+      );
+    }
+    seenNames.set(name, rel);
+  }
+  return `// ===== ${rel} ${'='.repeat(Math.max(0, 66 - rel.length))}\n${stripped}`;
 });
 
 const css = fs.readFileSync(path.join(root, 'styles.css'), 'utf8').trim();
