@@ -69,6 +69,8 @@ export class Game {
       btnSound: root.querySelector('#btnSound'),
       btnScore: root.querySelector('#btnScore'),
       btnNewGame: root.querySelector('#btnNewGame'),
+      btnFullscreen: root.querySelector('#btnFullscreen'),
+      installHint: root.querySelector('#installHint'),
       overlay: root.querySelector('#overlay'),
       overlayCard: root.querySelector('#overlayCard'),
       hud: root.querySelector('#hud'),
@@ -90,6 +92,7 @@ export class Game {
     this.best = {};
     this.mode = motionSupported() ? 'swing' : 'touch';
     this.soundOn = true;
+    this.wantsFullscreen = false;
 
     this.aim = { dirX: 0, dirY: -1, power: 0.5, visible: false, fromTouch: false };
     this.drag = null;
@@ -129,6 +132,7 @@ export class Game {
         this.holeIndex = 0;
       }
       if (typeof data.soundOn === 'boolean') this.soundOn = data.soundOn;
+      if (typeof data.wantsFullscreen === 'boolean') this.wantsFullscreen = data.wantsFullscreen;
       if (typeof data.mode === 'string' && MODES.some((m) => m.id === data.mode)) {
         this.mode = data.mode;
       }
@@ -147,6 +151,7 @@ export class Game {
           best: this.best,
           soundOn: this.soundOn,
           mode: this.mode,
+          wantsFullscreen: this.wantsFullscreen,
         }),
       );
     } catch {
@@ -172,6 +177,9 @@ export class Game {
       this.confirmNewGame();
     });
     this.el.btnMenu.addEventListener('click', () => this.toggleMenu());
+    this.el.btnFullscreen.addEventListener('click', () => this.toggleFullscreen());
+    document.addEventListener('fullscreenchange', () => this.updateChrome());
+    document.addEventListener('webkitfullscreenchange', () => this.updateChrome());
     this.el.btnMenuClose.addEventListener('click', () => this.setMenuOpen(false));
     this.el.btnSound.addEventListener('click', () => {
       this.soundOn = !this.soundOn;
@@ -329,6 +337,13 @@ export class Game {
         : `${played} (${diff > 0 ? '+' : ''}${diff})`;
     this.el.hint.textContent = hole.hint;
     this.el.btnMode.textContent = mode.label;
+    const fsUsable = this.fullscreenSupported() && !this.isStandalone();
+    this.el.btnFullscreen.hidden = !fsUsable;
+    // iOS ei tue Fullscreen APIa: siellä ainoa keino on aloitusnäytölle lisäys.
+    this.el.installHint.hidden = fsUsable || this.isStandalone();
+    this.el.btnFullscreen.textContent = this.isFullscreen()
+      ? 'Poistu koko näytöstä'
+      : 'Koko näyttö';
     this.el.btnSound.textContent = this.soundOn ? '🔊' : '🔇';
     this.el.btnSound.setAttribute(
       'aria-label',
@@ -346,6 +361,63 @@ export class Game {
 
   setStatus(text) {
     this.el.status.textContent = text;
+  }
+
+  // --- Koko näyttö ----------------------------------------------------------
+  //
+  // Fullscreen API vaatii käyttäjän eleen ja toimii Androidilla. iOS-Safari ei
+  // tue sitä muille kuin videoille, joten siellä selainkehyksistä pääsee eroon
+  // vain lisäämällä pelin aloitusnäytölle (manifest, display: fullscreen).
+
+  fullscreenSupported() {
+    const el = document.documentElement;
+    return !!(el.requestFullscreen || el.webkitRequestFullscreen);
+  }
+
+  isFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement);
+  }
+
+  isStandalone() {
+    return (
+      window.matchMedia?.('(display-mode: fullscreen), (display-mode: standalone)')?.matches ||
+      window.navigator.standalone === true
+    );
+  }
+
+  async toggleFullscreen() {
+    try {
+      if (this.isFullscreen()) {
+        await (document.exitFullscreen?.() ?? document.webkitExitFullscreen?.());
+        this.wantsFullscreen = false;
+      } else {
+        const el = document.documentElement;
+        await (el.requestFullscreen?.({ navigationUI: 'hide' }) ?? el.webkitRequestFullscreen?.());
+        this.wantsFullscreen = true;
+        // Peli on pystysuuntainen; lukitus onnistuu vain koko näytössä eikä
+        // kaikilla selaimilla – epäonnistuminen ei haittaa.
+        try {
+          await screen.orientation?.lock?.('portrait');
+        } catch {
+          /* ei tuettu */
+        }
+      }
+    } catch {
+      this.setStatus('Selain ei antanut siirtyä koko näyttöön.');
+    }
+    this.saveProgress();
+    this.updateChrome();
+  }
+
+  /** Palauttaa koko näytön käyttäjän eleestä, jos se oli viime kerralla päällä. */
+  restoreFullscreen() {
+    if (!this.wantsFullscreen || this.isFullscreen() || !this.fullscreenSupported()) return;
+    const el = document.documentElement;
+    try {
+      el.requestFullscreen?.({ navigationUI: 'hide' })?.catch(() => {});
+    } catch {
+      /* ele ei kelvannut */
+    }
   }
 
   /** Valikko peittää pelialueen, joten anturit eivät saa olla viritettyinä. */
@@ -655,6 +727,7 @@ export class Game {
     }
 
     const start = (touchOnly) => async () => {
+      this.restoreFullscreen();
       if (touchOnly) {
         this.mode = 'touch';
         this.updateChrome();

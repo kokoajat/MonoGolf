@@ -39,8 +39,16 @@ const parts = MODULES.map((rel) => {
   return `// ===== ${rel} ${'='.repeat(Math.max(0, 66 - rel.length))}\n${stripModuleSyntax(src, rel)}`;
 });
 
+// Kooste on yksi tiedosto: erillisiä manifestia, kuvakkeita tai service
+// workeria ei ole, joten niihin viittaaminen tuottaisi vain 404-virheitä.
+const prelude = 'window.__MONOGOLF_SINGLE_FILE__ = true;';
+
 const css = fs.readFileSync(path.join(root, 'styles.css'), 'utf8').trim();
 let html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+
+html = html
+  .replace(/[ \t]*<link rel="manifest"[^>]*>\n/, '')
+  .replace(/[ \t]*<link rel="apple-touch-icon"[^>]*>\n/, '');
 
 const before = html;
 html = html.replace(
@@ -49,7 +57,7 @@ html = html.replace(
 );
 html = html.replace(
   /[ \t]*<script type="module" src="src\/main\.js"><\/script>\n/,
-  `    <script>\n${parts.join('\n\n')}\n    </script>\n`,
+  `    <script>\n${prelude}\n\n${parts.join('\n\n')}\n    </script>\n`,
 );
 if (html === before) {
   throw new Error('index.html: tyyli- tai skriptiviittausta ei löytynyt');

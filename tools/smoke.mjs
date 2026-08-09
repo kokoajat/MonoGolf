@@ -41,7 +41,9 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json',
   '.svg': 'image/svg+xml',
+  '.png': 'image/png',
 };
 
 const server = http.createServer((req, res) => {
@@ -373,6 +375,44 @@ for (let h = 0; h < 18; h++) {
   }, h);
   await page.waitForTimeout(120);
   await page.screenshot({ path: path.join(SHOT_DIR, `hole-${String(h + 1).padStart(2, '0')}.png`) });
+}
+
+// --- Asennettavuus ja koko näyttö -------------------------------------------
+if (!ENTRY) {
+  const pwa = await page.evaluate(async () => {
+    const link = document.querySelector('link[rel="manifest"]');
+    const res = link ? await fetch(link.href) : null;
+    const manifest = res && res.ok ? await res.json() : null;
+    const icons = [];
+    for (const icon of manifest?.icons || []) {
+      const r = await fetch(new URL(icon.src, location.href));
+      icons.push({ src: icon.src, ok: r.ok, type: r.headers.get('content-type') });
+    }
+    const reg = await navigator.serviceWorker?.getRegistration?.();
+    return {
+      manifest: manifest && {
+        display: manifest.display,
+        icons: manifest.icons.length,
+        start_url: manifest.start_url,
+      },
+      icons,
+      swRegistered: !!reg,
+      fullscreenButton: !document.querySelector('#btnFullscreen').hidden,
+      apiSupported: !!document.documentElement.requestFullscreen,
+    };
+  });
+  console.log('asennettavuus:', JSON.stringify(pwa));
+  if (!pwa.manifest) errors.push('manifestia ei voitu ladata');
+  else if (pwa.manifest.display !== 'fullscreen') {
+    errors.push(`manifestin display on ${pwa.manifest.display}`);
+  }
+  for (const icon of pwa.icons) {
+    if (!icon.ok) errors.push(`kuvake puuttuu: ${icon.src}`);
+  }
+  if (!pwa.swRegistered) errors.push('service workeria ei rekisteröity');
+  if (pwa.apiSupported && !pwa.fullscreenButton) {
+    errors.push('koko näytön painike puuttuu vaikka selain tukee sitä');
+  }
 }
 
 // --- Kierroksen jatkaminen ja nollaus --------------------------------------

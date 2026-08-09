@@ -12,6 +12,13 @@
       content="MonoGolf – 18 väylän minigolf superpallolla, ohjaus puhelimen liikeantureilla."
     />
     <title>MonoGolf – 18 väylän minigolf</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <!-- iOS: aloitusnäytöltä käynnistys ilman selainkehyksiä. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="MonoGolf" />
     <link rel="stylesheet" href="styles.css" />
     <link
       rel="icon"
@@ -62,10 +69,15 @@
           <button id="btnMenuClose" class="icon" aria-label="Sulje valikko">✕</button>
         </div>
         <p class="hint" id="hint"></p>
+        <p class="hint" id="installHint" hidden>
+          Lisää peli aloitusnäytölle (selaimen jakovalikosta), niin se avautuu ilman
+          selainpalkkeja.
+        </p>
         <div class="controls">
           <button id="btnSensors">Ota anturit käyttöön</button>
           <button id="btnMode">Tila: heilautus</button>
           <button id="btnSound" aria-label="Äänet päällä">🔊</button>
+          <button id="btnFullscreen">Koko näyttö</button>
           <button id="btnReset">Alusta väylä</button>
           <button id="btnScore">Tulokset</button>
           <button id="btnNewGame" class="ghost">Nollaa peli</button>

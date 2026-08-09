@@ -316,6 +316,10 @@ button.icon:active {
   grid-column: span 2;
 }
 
+#btnFullscreen {
+  grid-column: 1 / -1;
+}
+
 #btnReset,
 #btnScore {
   grid-column: span 3;

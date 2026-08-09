@@ -26,6 +26,24 @@ Avaa selaimessa `http://localhost:8080`.
 
 **Puhelimella pelatessa** sivu pitää tarjoilla https-osoitteesta. Ks. [Julkaisu](#julkaisu).
 
+### Koko näyttö ja asennus
+
+Selainpalkit saa pois kahdella tavalla:
+
+- **Koko näyttö** -painike valikossa käyttää selaimen Fullscreen APIa. Toimii
+  Androidilla; valinta muistetaan ja palautetaan seuraavalla käynnistyksellä
+  ensimmäisestä napautuksesta (API vaatii käyttäjän eleen).
+- **Aloitusnäytölle lisääminen** on ainoa keino iOS-Safarissa, joka ei tue
+  Fullscreen APIa muille kuin videoille. Peli on asennettava web-sovellus
+  (`manifest.webmanifest`, `display: fullscreen`), joten aloitusnäytöltä
+  käynnistettynä se avautuu ilman osoiteriviä kummallakin alustalla.
+
+`sw.js` tallentaa pelin selaimen välimuistiin, joten se toimii myös ilman
+verkkoyhteyttä. Sivu haetaan aina ensin verkosta, joten uusi julkaisu ei jää
+välimuistiin jumiin.
+
+Kuvakkeet generoidaan komennolla `node tools/icons.mjs` (Chromium rasteroi SVG:n).
+
 ### Anturiluvat
 
 - **iOS (Safari 13+)**: peli kysyy luvan liikeantureihin. Lupa voidaan pyytää vain
@@ -47,9 +65,11 @@ workflowin oma token ei saa luoda Pages-sivustoa.
 
 ### Yhden tiedoston versio
 
-`npm run build` kokoaa koko pelin yhdeksi tiedostoksi `dist/index.html` (n. 80 kt, ei
+`npm run build` kokoaa koko pelin yhdeksi tiedostoksi `dist/index.html` (n. 90 kt, ei
 ulkoisia viittauksia). Sen voi pudottaa mihin tahansa staattiseen hostiin tai lähettää
-sellaisenaan – kaikki 18 väylää, fysiikka ja anturituki ovat mukana.
+sellaisenaan – kaikki 18 väylää, fysiikka ja anturituki ovat mukana. Koosteessa ei ole
+manifestia eikä service workeria, joten sitä ei voi asentaa aloitusnäytölle; siihen
+käytetään varsinaista sivustoa.
 
 ## Ohjaus
 
@@ -157,7 +177,11 @@ src/sensors.js      devicemotion-luku ja heilautuksen tunnistus
 src/render.js       canvas-piirto
 src/audio.js        WebAudio-tehosteet
 src/game.js         tilakone, syötteet ja käyttöliittymä
-tools/bundle.mjs    kokoaa kaiken yhdeksi HTML-tiedostoksi
+manifest.webmanifest  asennettavan sovelluksen määrittely
+sw.js                 välimuisti ja offline-tuki
+icons/                sovelluskuvakkeet
+tools/bundle.mjs      kokoaa kaiken yhdeksi HTML-tiedostoksi
+tools/icons.mjs       generoi kuvakkeet
 ```
 
 ### Testit
