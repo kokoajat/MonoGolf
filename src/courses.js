@@ -172,7 +172,9 @@ const DESIGNS = [
     hint: 'Rinne valuttaa pallon takaisin. Tarvitset vauhtia – muttet liikaa.',
     boundary: frame(),
     obstacles: [rect(L, 2.35, 1.0, 0.25), rect(2.35, 2.35, 1.0, 0.25)],
-    zones: [slope(L, 2.6, 3.1, 2.7, 0, 1.05)],
+    // Rinteen kiihtyvyys on selvästi yli viheriön vierintävastuksen (1,13 m/s²),
+    // joten pallo todella kiihtyy alamäkeen eikä jää ryömimään.
+    zones: [slope(L, 2.6, 3.1, 2.7, 0, 2.0)],
     tee: [1.8, 7.0],
     cup: [1.8, 1.35],
   },
@@ -315,7 +317,7 @@ const DESIGNS = [
     zones: [
       water(L, 3.6, 1.3, 0.8),
       water(2.05, 3.6, 1.3, 0.8),
-      slope(L, 1.3, 3.1, 1.5, 0, 0.6),
+      slope(L, 1.3, 3.1, 1.5, 0, 1.5),
     ],
     movers: [
       { kind: 'slider', rect: [1.2, 4.8, 1.2, 0.24], axis: [1, 0], amp: 0.65, omega: 1.25 },

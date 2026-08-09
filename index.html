@@ -34,6 +34,7 @@
 
       <main class="stage">
         <canvas id="course"></canvas>
+        <p class="play-hud" id="playHud" aria-hidden="true"></p>
       </main>
 
       <section class="panel">
@@ -52,12 +53,13 @@
           <span class="meter-value">anturi</span>
         </div>
 
+        <!-- Ruudukko pitää painikkeet paikallaan, vaikka tekstit vaihtuvat. -->
         <div class="controls">
-          <button id="btnSensors" class="wide">Ota anturit käyttöön</button>
-          <button id="btnMode">Heilautus</button>
+          <button id="btnSensors">Ota anturit käyttöön</button>
+          <button id="btnMode">Tila: heilautus</button>
+          <button id="btnSound" aria-label="Äänet päällä">🔊</button>
           <button id="btnReset">Alusta</button>
           <button id="btnScore">Tulokset</button>
-          <button id="btnSound" aria-label="Äänet päällä">🔊</button>
         </div>
       </section>
 

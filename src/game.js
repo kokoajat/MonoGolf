@@ -2,7 +2,15 @@
 
 import { COURSES, TOTAL_PAR } from './courses.js';
 import { buildWorld } from './world.js';
-import { createBall, stepBall, launchBall, MAX_SPEED, BALL_RADIUS } from './physics.js';
+import {
+  createBall,
+  stepBall,
+  launchBall,
+  MAX_SPEED,
+  BALL_RADIUS,
+  STATIC_FRICTION,
+  GRAVITY,
+} from './physics.js';
 import { Renderer } from './render.js';
 import { MotionInput, motionSupported, needsMotionPermission } from './sensors.js';
 import { Sfx } from './audio.js';
@@ -11,25 +19,30 @@ const MIN_SHOT_SPEED = 0.65;
 const MAX_SHOT_SPEED = MAX_SPEED;
 const MAX_DRAG_METERS = 0.9; // täysi voima tällä vetomatkalla
 const SHOT_TIME_LIMIT = 22; // s, tämän jälkeen palloa hidastetaan pakolla
+// Kameran lähennys pallon vieriessä. Hitaana zoomataan lähelle, kovassa
+// vauhdissa laajemmalle, jotta pallon eteen ehtii nähdä.
+const ZOOM_SLOW = 1.75;
+const ZOOM_FAST = 1.15;
+const ZOOM_FAST_SPEED = 3.2; // m/s, tästä ylöspäin laajin kuva
 
 const STORAGE_KEY = 'monogolf.v1';
 
 const MODES = [
   {
     id: 'swing',
-    label: 'Heilautus',
-    hint: 'Pidä puhelinta vaakatasossa näyttö ylöspäin ja heilauta siihen suuntaan, johon haluat lyödä.',
+    label: 'Tila: heilautus',
+    hint: 'Pidä puhelinta vaakatasossa näyttö ylöspäin ja heilauta siihen suuntaan, johon haluat lyödä. Pallo lähtee vasta kun puhelin on taas paikallaan.',
     needsMotion: true,
   },
   {
     id: 'aim',
-    label: 'Kosketus + heilautus',
-    hint: 'Aseta suunta sormella radalta ja lyö heilauttamalla puhelinta.',
+    label: 'Tila: tähtäys',
+    hint: 'Aseta suunta sormella radalta ja heilauta puhelinta. Pallo lähtee kun puhelin pysähtyy.',
     needsMotion: true,
   },
   {
     id: 'touch',
-    label: 'Vain kosketus',
+    label: 'Tila: kosketus',
     hint: 'Vedä pallosta taaksepäin ja päästä irti – kuin ritsalla.',
     needsMotion: false,
   },
@@ -57,7 +70,10 @@ export class Game {
       btnScore: root.querySelector('#btnScore'),
       overlay: root.querySelector('#overlay'),
       overlayCard: root.querySelector('#overlayCard'),
+      playHud: root.querySelector('#playHud'),
     };
+    this.root = root;
+    this.playing = false;
 
     this.renderer = new Renderer(this.el.canvas);
     this.sfx = new Sfx();
@@ -154,7 +170,7 @@ export class Game {
     });
     this.motion.addEventListener('swingstart', () => {
       if (this.state !== 'ready') return;
-      this.setStatus('Heilautus havaittu…');
+      this.setStatus('Liike tallennetaan – pysäytä puhelin niin pallo lähtee.');
     });
     this.motion.addEventListener('swingprogress', (e) => {
       if (this.state !== 'ready') return;
@@ -163,7 +179,7 @@ export class Game {
     this.motion.addEventListener('swingcancel', () => {
       if (this.state !== 'ready') return;
       this.setPower(0);
-      this.setStatus('Liian kevyt heilautus. Yritä uudelleen.');
+      this.setStatus('Liian kevyt liike. Heilauta jämäkämmin.');
     });
     this.motion.addEventListener('swing', (e) => this.onSwing(e.detail));
   }
@@ -296,14 +312,19 @@ export class Game {
       'aria-label',
       this.soundOn ? 'Äänet päällä' : 'Äänet pois',
     );
+    // Anturipainike on kertaluontoinen lupapyyntö: kun lupa on myönnetty,
+    // painike katoaa eikä jätä jälkeensä tilamerkkiä. Anturien toiminnan näkee
+    // Liike-mittarista.
     const sensorsReady = this.motion.permission === 'granted';
-    this.el.btnSensors.textContent = sensorsReady ? 'Anturit ✓' : 'Ota anturit käyttöön';
-    this.el.btnSensors.classList.toggle('is-active', sensorsReady);
+    this.el.btnSensors.hidden = sensorsReady;
+    this.el.btnSensors.textContent =
+      this.motion.permission === 'denied' ? 'Anturit estetty – yritä uudelleen' : 'Ota anturit käyttöön';
     this.el.motionRow.hidden = !sensorsReady;
   }
 
   setStatus(text) {
     this.el.status.textContent = text;
+    this.el.playHud.textContent = text;
   }
 
   setPower(p) {
@@ -324,7 +345,7 @@ export class Game {
     this.strokes = 0;
     this.safeSpot = { x: this.ball.x, y: this.ball.y };
     this.shotTime = 0;
-    this.renderer.clearTrail();
+    this.renderer.resetView();
     this.renderer.resize(this.world);
     this.aim = {
       dirX: 0,
@@ -347,7 +368,7 @@ export class Game {
       return 'Ota anturit käyttöön tai vaihda kosketusohjaukseen.';
     }
     if (this.mode === 'aim') return 'Aseta suunta sormella ja heilauta puhelinta.';
-    return 'Heilauta puhelinta lyödäksesi.';
+    return 'Heilauta puhelinta – pallo lähtee kun pysäytät sen.';
   }
 
   armIfReady() {
@@ -395,11 +416,20 @@ export class Game {
 
   handleEvents(events) {
     for (const e of events) {
-      if (e.type === 'bounce') this.sfx.bounce(e.impact);
-      else if (e.type === 'holed') this.onHoled();
-      else if (e.type === 'water') this.onPenalty('vesi');
-      else if (e.type === 'out') this.onPenalty('ulos');
-      else if (e.type === 'lipout') this.flashMessage('Reunalta ohi!');
+      if (e.type === 'bounce') {
+        this.sfx.bounce(e.impact);
+        this.renderer.spawnSparks(e.x, e.y, e.impact);
+      } else if (e.type === 'holed') {
+        this.renderer.spawnHoleBurst(this.world.cup.x, this.world.cup.y);
+        this.onHoled();
+      } else if (e.type === 'water') {
+        this.renderer.spawnSplash(e.x, e.y);
+        this.onPenalty('vesi');
+      } else if (e.type === 'out') {
+        this.onPenalty('ulos');
+      } else if (e.type === 'lipout') {
+        this.flashMessage('Reunalta ohi!');
+      }
     }
   }
 
@@ -545,7 +575,7 @@ export class Game {
       title: 'MonoGolf',
       lines: [
         '18 väylää minigolfia superpallolla, joka kimpoaa laidoista oikean fysiikan mukaan.',
-        'Pidä puhelinta vaakatasossa näyttö ylöspäin ja heilauta sitä siihen suuntaan, johon haluat lyödä. Heilautuksen voimakkuus on lyönnin voima.',
+        'Pidä puhelinta vaakatasossa näyttö ylöspäin ja heilauta sitä siihen suuntaan, johon haluat lyödä. Heilautuksen voimakkuus on lyönnin voima, ja pallo lähtee liikkeelle sillä hetkellä kun pysäytät puhelimen.',
         'Lyönnin jälkeen anturit kytkeytyvät pois – pallo vierii rauhassa loppuun asti.',
         sensorText,
       ],
@@ -682,6 +712,16 @@ export class Game {
     dt = Math.min(dt, 0.05);
     this.time += dt;
 
+    if (this.state === 'ready' && this.ball.resting && this.ballWouldRoll()) {
+      // Pallo pysähtyi kaltevalle pinnalle: painovoima jatkaa työtään.
+      this.ball.resting = false;
+      this.state = 'rolling';
+      this.shotTime = 0;
+      this.setStatus('Pallo vierii rinnettä alas.');
+      this.motion.disarm();
+      this.updateChrome();
+    }
+
     if (this.state === 'rolling') {
       const events = [];
       this.shotTime += dt;
@@ -698,6 +738,12 @@ export class Game {
       this.world.advance(dt);
     }
 
+    const playing = this.state === 'rolling';
+    if (playing !== this.playing) {
+      this.playing = playing;
+      this.root.classList.toggle('is-playing', playing);
+    }
+
     this.ball.spinAngle = (this.ball.spinAngle || 0) + this.ball.w * dt;
 
     if (this.state === 'ready' && this.mode === 'swing') {
@@ -710,9 +756,25 @@ export class Game {
       ball: this.ball,
       aim: this.aim,
       time: this.time,
+      dt,
+      camera: this.cameraTarget(),
     });
 
     requestAnimationFrame((n) => this.loop(n));
+  }
+
+  /** Onko pallo pinnalla, joka lähtee vierittämään sitä itsestään? */
+  ballWouldRoll() {
+    const surf = this.world.surfaceAt(this.ball.x, this.ball.y);
+    return Math.hypot(surf.ax, surf.ay) > STATIC_FRICTION * surf.mu * GRAVITY;
+  }
+
+  /** Pelin aikana kamera seuraa palloa lähempää, muuten koko väylä näkyy. */
+  cameraTarget() {
+    if (this.state !== 'rolling') return { zoom: 1, follow: null };
+    const speed = Math.hypot(this.ball.vx, this.ball.vy);
+    const t = Math.min(1, speed / ZOOM_FAST_SPEED);
+    return { zoom: ZOOM_SLOW + (ZOOM_FAST - ZOOM_SLOW) * t, follow: this.ball };
   }
 
   onBallStopped() {

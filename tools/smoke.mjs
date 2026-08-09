@@ -157,6 +157,65 @@ for (let i = 0; i < SHOTS; i++) {
   if (!enabled.ok || !enabled.armed) {
     errors.push(`antureita ei saatu viritettyä: ${JSON.stringify(enabled)}`);
   }
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: path.join(SHOT_DIR, '06-sensors-on.png') });
+  // Lupapainike katoaa kun lupa on myönnetty, eikä jätä tilamerkkiä jälkeensä.
+  if (await page.locator('#btnSensors').isVisible()) {
+    errors.push('anturipainike jäi näkyviin luvan jälkeen');
+  }
+
+  // Pitkä, yhtäjaksoinen liike: lyönti ei saa lähteä ennen kuin puhelin
+  // pysähtyy, vaikka liikettä jatkettaisiin sekunnin ajan.
+  const sustained = await page.evaluate(async () => {
+    const fire = (ay) =>
+      window.dispatchEvent(
+        new DeviceMotionEvent('devicemotion', {
+          accelerationIncludingGravity: { x: 0, y: ay, z: 9.81 },
+          interval: 16,
+        }),
+      );
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 20; i++) {
+      fire(0);
+      await sleep(16);
+    }
+    // ~1 s edestakaista heiluttelua
+    for (let i = 0; i < 60; i++) {
+      fire(i % 2 === 0 ? 14 : -12);
+      await sleep(16);
+    }
+    const during = {
+      strokes: window.game.strokes,
+      state: window.game.state,
+      swinging: !!window.game.motion.swing,
+      power: window.game.aim.power,
+    };
+    // puhelin pysähtyy
+    for (let i = 0; i < 16; i++) {
+      fire(0);
+      await sleep(16);
+    }
+    await sleep(150);
+    return { during, after: { strokes: window.game.strokes, state: window.game.state } };
+  });
+  console.log('pitkä liike:', JSON.stringify(sustained));
+  if (sustained.during.strokes !== 0) {
+    errors.push('lyönti lähti kesken liikkeen (pitäisi odottaa pysähtymistä)');
+  }
+  if (!sustained.during.swinging) errors.push('pitkää liikettä ei tunnistettu');
+  if (sustained.after.strokes !== 1) errors.push('lyönti ei lähtenyt puhelimen pysähtyessä');
+
+  // Palautetaan väylä alkutilaan seuraavaa testiä varten.
+  await page
+    .waitForFunction(() => window.game.state !== 'rolling', null, { timeout: 30000 })
+    .catch(() => errors.push('pitkän liikkeen lyönti ei pysähtynyt'));
+  await page.evaluate(() => {
+    window.game.hideCard();
+    window.game.loadHole(0);
+    window.game.mode = 'swing';
+    window.game.armIfReady();
+  });
+  await page.waitForTimeout(100);
 
   // Heilautus eteenpäin: puhelin vaakatasossa (painovoima z-akselilla),
   // kiihtyvyys +y kiihdytysvaiheessa ja -y jarrutuksessa.

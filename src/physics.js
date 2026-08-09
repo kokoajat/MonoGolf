@@ -18,6 +18,14 @@ export const GRAVITY = 9.81; // m/s^2
 export const MAX_SPEED = 6.0; // m/s
 export const REST_SPEED = 0.035; // m/s, tämän alle pysähtyneeksi
 export const REST_TIME = 0.12; // s, kuinka kauan hitaana ennen pysähtymistä
+// Lepokitka suhteessa vierintävastukseen: alle tämän jäävä kiihtyvyys ei riitä
+// liikuttamaan paikallaan olevaa palloa.
+//
+// Arvo pidetään lähellä ykköstä tarkoituksella. Väli [STATIC_FRICTION·μg, μg]
+// on epävakaa: siinä pallo lähtisi liikkeelle mutta hidastuisi heti takaisin
+// pysähdyksiin, mikä näkyisi nykimisenä. Rinteet mitoitetaan niin, että niiden
+// kiihtyvyys ylittää μg:n selvästi (ks. tools/simulate.mjs tarkistus).
+export const STATIC_FRICTION = 0.9;
 
 // Kierteen aiheuttama sivuttaiskiihtyvyys: a = SPIN_CURVE * ω * |v|
 const SPIN_CURVE = 0.0021;
@@ -126,10 +134,15 @@ function integrate(ball, world, h, events) {
   ball.x += ball.vx * h;
   ball.y += ball.vy * h;
 
-  // 6) Pysähtymisen tunnistus: hidas eikä mitään mikä kiihdyttäisi uudelleen
+  // 6) Pysähtymisen tunnistus: hidas eikä mitään mikä kiihdyttäisi uudelleen.
+  //
+  // Paikallaan olevaa palloa pitää paikallaan vain lepokitka, joka on selvästi
+  // pienempi kuin liikkeen aikainen vierintävastus. Ilman tätä eroa kaltevan
+  // pinnan kiihtyvyys (g·sin θ) jää juuri vierintävastuksen alle eikä pallo
+  // lähde koskaan vierimään alamäkeen.
   const finalSpeed = Math.hypot(ball.vx, ball.vy);
   const drive = Math.hypot(surf.ax, surf.ay);
-  if (finalSpeed < REST_SPEED && drive < surf.mu * GRAVITY) {
+  if (finalSpeed < REST_SPEED && drive < STATIC_FRICTION * surf.mu * GRAVITY) {
     ball.restTimer += h;
     if (ball.restTimer >= REST_TIME) {
       ball.vx = 0;

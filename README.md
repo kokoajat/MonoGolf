@@ -3,10 +3,10 @@
 **Pelaa: https://kokoajat.github.io/MonoGolf/**
 
 18 väylän minigolfpeli selaimessa. Pallona on **superpallo**, joka kimpoaa laidoista
-oikean jäykän kappaleen fysiikan mukaan. Lyönti tehdään **heilauttamalla puhelinta** –
-heilautuksen suunta ja voimakkuus luetaan laitteen kiihtyvyysantureista. Kun pallo on
-lähtenyt liikkeelle, anturien kuuntelu kytketään pois ja pallo vierii kentällä rauhassa
-loppuun asti.
+oikean jäykän kappaleen fysiikan mukaan. Lyönti tehdään **heilauttamalla puhelinta**:
+liikkeen ajan kerätään talteen suunta ja voimakkuus, ja **pallo lähtee vasta kun
+puhelin pysähtyy**. Sen jälkeen anturien kuuntelu kytketään pois ja pallo vierii
+kentällä rauhassa loppuun asti.
 
 Ei riippuvuuksia, ei käännösvaihetta: pelkkää HTML:ää, CSS:ää ja ES-moduuleja.
 
@@ -58,15 +58,24 @@ Ohjaustapaa vaihdetaan alapalkin painikkeesta.
 | Tila | Suunta | Voima |
 | --- | --- | --- |
 | **Heilautus** (oletus puhelimella) | heilautuksen suunta | heilautuksen voimakkuus |
-| **Kosketus + heilautus** | sormella asetettu tähtäys | heilautuksen voimakkuus |
-| **Vain kosketus** (oletus tietokoneella) | vedä pallosta ritsan tapaan | vetomatka |
+| **Tähtäys** | sormella asetettu tähtäys | heilautuksen voimakkuus |
+| **Kosketus** (oletus tietokoneella) | vedä pallosta ritsan tapaan | vetomatka |
 
 Heilautustilassa puhelinta pidetään **vaakatasossa näyttö ylöspäin** ja heilautetaan
 siihen suuntaan, johon pallon halutaan lähtevän: puhelimen yläreunan suunta vastaa
 ruudulla ylöspäin.
 
+Lyönnin kulku on kaksivaiheinen: niin kauan kuin puhelin liikkuu, peli vain kerää
+liikkeestä huippukiihtyvyyden (= voima) ja kiihdytysvaiheen suunnan. Kun puhelin on
+ollut paikallaan hetken, lyönti laukeaa. Näin lyönnin voi ottaa rauhassa eikä liike
+katkea kesken.
+
 Alapalkin *Liike*-mittari näyttää anturin lukeman reaaliajassa, joten anturien toiminnan
 näkee heti. *Voima*-mittari näyttää lyönnin tehon.
+
+Pallon vieriessä käyttöliittymä väistyy ja pelialue täyttää ruudun. Kamera seuraa
+palloa: hitaassa vauhdissa lähempää, kovassa vauhdissa laajemmalta, jotta pallon eteen
+ehtii nähdä. Kun pallo pysähtyy, näkymä palaa koko väylään.
 
 Muut painikkeet: **Alusta** aloittaa väylän alusta, **Tulokset** avaa tuloskortin (jonka
 riviä napauttamalla voi siirtyä suoraan valitulle väylälle) ja kaiutinkuvake vaihtaa
@@ -88,7 +97,11 @@ Kaikki lasketaan SI-yksiköissä ja oikeilla mitoilla: pallon halkaisija 4,3 cm 
   vierivää palloa sivusuunnassa. Kierre vaimenee pinnan kitkan mukaan.
 - **Liikkuvat esteet** (myllyn siivet, liukuovet) huomioidaan suhteellisena nopeutena
   kosketuspisteessä, joten liikkuva palkki myös lyö palloa eteenpäin.
-- **Kaltevat pinnat ja kiihdytyslaatat** lisäävät vakiokiihtyvyyden.
+- **Kaltevat pinnat ja kiihdytyslaatat** lisäävät vakiokiihtyvyyden. Paikallaan olevaa
+  palloa pitää paikallaan vain lepokitka, joka on vierintävastusta pienempi – siksi
+  pallo lähtee itsestään vierimään alamäkeen. Rinteet mitoitetaan niin, että niiden
+  kiihtyvyys ylittää vierintävastuksen selvästi; muuten pallo jäisi ryömimään tai
+  nykimään liike- ja lepotilan rajalla. `tools/simulate.mjs` tarkistaa tämän.
 - **Reikä** nielaisee pallon vain, jos vauhti on alle 1,3 m/s – kovempaa pallo
   pyyhkäisee reunan yli.
 - Askel jaetaan aliaskeliin niin, ettei pallo liiku kertaakaan yli 35 % säteestään.

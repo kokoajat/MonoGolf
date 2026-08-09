@@ -9,10 +9,10 @@
 // Kun pallo on liikkeellä, kuuntelija sammutetaan kokonaan (disarm), jolloin
 // puhelimen heiluttelu ei enää vaikuta peliin.
 
-const START_THRESHOLD = 6.0; // m/s^2, heilautus alkaa
-const END_THRESHOLD = 2.5; // m/s^2, heilautus loppuu
-const END_HOLD = 0.09; // s, kuinka kauan hiljaista ennen lopetusta
-const MAX_WINDOW = 0.6; // s, heilautusikkunan enimmäispituus
+const START_THRESHOLD = 6.0; // m/s^2, liikkeen tunnistus alkaa
+const STILL_THRESHOLD = 1.8; // m/s^2, tätä hiljaisempi = puhelin paikallaan
+const STILL_HOLD = 0.16; // s, kuinka kauan paikallaan ennen laukaisua
+const MAX_WINDOW = 4.0; // s, varmistusraja jos puhelin ei pysähdy koskaan
 const PEAK_MIN = 7.0; // m/s^2 -> teho 0
 const PEAK_MAX = 34.0; // m/s^2 -> teho 1
 const GRAVITY_ALPHA = 0.88; // alipäästösuodattimen kerroin
@@ -179,7 +179,7 @@ export class MotionInput extends EventTarget {
         start: now,
         peak: 0,
         peakAt: now,
-        quietSince: 0,
+        stillSince: 0,
         dirX: 0,
         dirY: 0,
         dirZ: 0,
@@ -203,25 +203,29 @@ export class MotionInput extends EventTarget {
       s.dirY = 0;
       s.dirZ = 0;
     }
-    if (now <= s.peakAt + 0.02) {
+    if (now <= s.peakAt + 0.04) {
       s.dirX += lin.x * mag;
       s.dirY += lin.y * mag;
       s.dirZ += lin.z * mag;
     }
 
+    // Puhelin lasketaan paikallaan olevaksi vasta kun liike on tyyntynyt
+    // yhtäjaksoisesti STILL_HOLD-ajan. Niin kauan kuin puhelinta liikutetaan,
+    // suuntaa ja voimaa vain kerätään talteen.
+    if (mag < STILL_THRESHOLD) {
+      if (!s.stillSince) s.stillSince = now;
+    } else {
+      s.stillSince = 0;
+    }
+    const still = s.stillSince ? now - s.stillSince : 0;
+
     this.dispatchEvent(
-      new CustomEvent('swingprogress', { detail: { power: powerFromPeak(s.peak) } }),
+      new CustomEvent('swingprogress', {
+        detail: { power: powerFromPeak(s.peak), moving: !s.stillSince, still },
+      }),
     );
 
-    if (mag < END_THRESHOLD) {
-      if (!s.quietSince) s.quietSince = now;
-    } else {
-      s.quietSince = 0;
-    }
-
-    const quietLongEnough = s.quietSince && now - s.quietSince >= END_HOLD;
-    const windowExpired = now - s.start >= MAX_WINDOW;
-    if (quietLongEnough || windowExpired) this._finishSwing();
+    if (still >= STILL_HOLD || now - s.start >= MAX_WINDOW) this._finishSwing();
   }
 
   _finishSwing() {

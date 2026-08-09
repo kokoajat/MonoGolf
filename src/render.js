@@ -24,18 +24,29 @@ const COLORS = {
   aim: 'rgba(255,255,255,0.85)',
 };
 
+// Kameran lähestymisnopeus (aikavakio sekunteina): pienempi = napakampi.
+const CAM_TAU_ZOOM = 0.35;
+const CAM_TAU_PAN = 0.18;
+
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.dpr = 1;
     this.scale = 1;
+    this.baseScale = 1;
     this.offsetX = 0;
     this.offsetY = 0;
+    this.u = 1;
     this.trail = [];
+    this.particles = [];
+    // Kamera maailmakoordinaateissa: keskipiste ja zoom suhteessa koko radan näkymään.
+    this.cam = { x: null, y: null, zoom: 1 };
+    this.shake = 0;
   }
 
-  resize(world) {
+  /** Canvaksen koko ja koko radan mahtuva perusmittakaava. */
+  measure(world) {
     const rect = this.canvas.getBoundingClientRect();
     const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
     this.dpr = dpr;
@@ -46,11 +57,65 @@ export class Renderer {
       this.canvas.height = h;
     }
     const pad = 6 * dpr;
-    this.scale = Math.min((w - pad * 2) / world.width, (h - pad * 2) / world.height);
-    this.offsetX = (w - world.width * this.scale) / 2;
-    this.offsetY = (h - world.height * this.scale) / 2;
+    this.baseScale = Math.min((w - pad * 2) / world.width, (h - pad * 2) / world.height);
     // Koristeiden mittayksikkö suhteessa väylän leveyteen (suunnitteluleveys 3,6).
     this.u = world.width / 3.6;
+  }
+
+  /**
+   * Päivittää kameran kohti tavoitetta ja laskee lopullisen muunnoksen.
+   * camera = { zoom, follow: {x, y, vx, vy} | null }
+   */
+  updateCamera(world, camera, dt) {
+    this.measure(world);
+    const targetZoom = Math.max(1, camera?.zoom ?? 1);
+
+    let tx = world.width / 2;
+    let ty = world.height / 2;
+    if (camera?.follow) {
+      // Katse hieman menosuuntaan, jotta pallon eteen näkee.
+      const lead = 0.18;
+      tx = camera.follow.x + (camera.follow.vx || 0) * lead;
+      ty = camera.follow.y + (camera.follow.vy || 0) * lead;
+    }
+
+    if (this.cam.x === null) {
+      this.cam.x = tx;
+      this.cam.y = ty;
+      this.cam.zoom = targetZoom;
+    } else {
+      const kz = 1 - Math.exp(-dt / CAM_TAU_ZOOM);
+      const kp = 1 - Math.exp(-dt / CAM_TAU_PAN);
+      this.cam.zoom += (targetZoom - this.cam.zoom) * kz;
+      this.cam.x += (tx - this.cam.x) * kp;
+      this.cam.y += (ty - this.cam.y) * kp;
+    }
+
+    this.scale = this.baseScale * this.cam.zoom;
+
+    // Rajaa näkymä radan sisään, ettei reunan ulkopuolelle jää tyhjää.
+    const halfW = this.canvas.width / 2 / this.scale;
+    const halfH = this.canvas.height / 2 / this.scale;
+    const cx = halfW * 2 >= world.width ? world.width / 2 : clamp(this.cam.x, halfW, world.width - halfW);
+    const cy = halfH * 2 >= world.height ? world.height / 2 : clamp(this.cam.y, halfH, world.height - halfH);
+
+    let sx = 0;
+    let sy = 0;
+    if (this.shake > 0.001) {
+      sx = (Math.random() - 0.5) * this.shake;
+      sy = (Math.random() - 0.5) * this.shake;
+      this.shake *= Math.exp(-dt / 0.09);
+    } else {
+      this.shake = 0;
+    }
+
+    this.offsetX = this.canvas.width / 2 - cx * this.scale + sx;
+    this.offsetY = this.canvas.height / 2 - cy * this.scale + sy;
+  }
+
+  /** Yhteensopivuus: pelkkä mittaus ilman kameran päivitystä. */
+  resize(world) {
+    if (world) this.updateCamera(world, { zoom: this.cam.zoom }, 0);
   }
 
   toScreen(x, y) {
@@ -68,15 +133,26 @@ export class Renderer {
     this.trail.length = 0;
   }
 
+  /** Uusi väylä: kamera napsahtaa paikalleen eikä lennä edellisestä. */
+  resetView() {
+    this.cam.x = null;
+    this.cam.y = null;
+    this.cam.zoom = 1;
+    this.shake = 0;
+    this.particles.length = 0;
+    this.trail.length = 0;
+  }
+
   pushTrail(x, y) {
     this.trail.push([x, y]);
     if (this.trail.length > 90) this.trail.shift();
   }
 
   draw(state) {
-    const { world, ball, aim, time } = state;
+    const { world, ball, aim, time, dt = 0, camera } = state;
     const ctx = this.ctx;
-    this.resize(world);
+    this.updateCamera(world, camera, dt);
+    this.updateParticles(dt);
     const s = this.scale;
 
     ctx.save();
@@ -98,6 +174,7 @@ export class Renderer {
     this.drawTrail(ctx);
     if (aim && aim.visible) this.drawAim(ctx, ball, aim);
     this.drawBall(ctx, ball);
+    this.drawParticles(ctx);
 
     ctx.restore();
   }
@@ -439,4 +516,94 @@ export class Renderer {
     ctx.stroke();
     ctx.restore();
   }
+
+  // --- Hiukkasefektit -------------------------------------------------------
+
+  spawnSparks(x, y, impact) {
+    const n = Math.min(10, 2 + Math.round(impact * 2));
+    const speed = Math.min(1.4, 0.25 + impact * 0.25);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(a) * speed * (0.4 + Math.random() * 0.6),
+        vy: Math.sin(a) * speed * (0.4 + Math.random() * 0.6),
+        life: 0.22 + Math.random() * 0.16,
+        age: 0,
+        r: BALL_RADIUS * (0.18 + Math.random() * 0.22),
+        color: '255,238,190',
+        drag: 4.5,
+      });
+    }
+    this.shake = Math.min(6, this.shake + impact * 1.1);
+  }
+
+  spawnSplash(x, y) {
+    for (let i = 0; i < 16; i++) {
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.4;
+      const speed = 0.4 + Math.random() * 0.9;
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(a) * speed,
+        vy: Math.sin(a) * speed,
+        life: 0.5 + Math.random() * 0.3,
+        age: 0,
+        r: BALL_RADIUS * (0.2 + Math.random() * 0.3),
+        color: '176,222,255',
+        drag: 2.2,
+      });
+    }
+    this.shake = Math.min(6, this.shake + 3);
+  }
+
+  spawnHoleBurst(x, y) {
+    for (let i = 0; i < 26; i++) {
+      const a = (i / 26) * Math.PI * 2 + Math.random() * 0.2;
+      const speed = 0.7 + Math.random() * 0.7;
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(a) * speed,
+        vy: Math.sin(a) * speed,
+        life: 0.6 + Math.random() * 0.4,
+        age: 0,
+        r: BALL_RADIUS * (0.2 + Math.random() * 0.35),
+        color: i % 3 === 0 ? '255,214,102' : '120,235,160',
+        drag: 2.6,
+      });
+    }
+  }
+
+  updateParticles(dt) {
+    if (dt <= 0 || this.particles.length === 0) return;
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.age += dt;
+      if (p.age >= p.life) {
+        this.particles.splice(i, 1);
+        continue;
+      }
+      const damp = Math.exp(-p.drag * dt);
+      p.vx *= damp;
+      p.vy *= damp;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+  }
+
+  drawParticles(ctx) {
+    for (const p of this.particles) {
+      const t = 1 - p.age / p.life;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * (0.4 + t * 0.6), 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${p.color},${(0.85 * t).toFixed(3)})`;
+      ctx.fill();
+    }
+  }
+}
+
+function clamp(v, lo, hi) {
+  return v < lo ? lo : v > hi ? hi : v;
 }

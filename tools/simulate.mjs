@@ -7,7 +7,16 @@
 
 import { COURSES } from '../src/courses.js';
 import { buildWorld, pointInPolygon } from '../src/world.js';
-import { createBall, stepBall, launchBall, BALL_RADIUS, MAX_SPEED } from '../src/physics.js';
+import {
+  createBall,
+  stepBall,
+  launchBall,
+  BALL_RADIUS,
+  MAX_SPEED,
+  GRAVITY,
+  STATIC_FRICTION,
+} from '../src/physics.js';
+import { SURFACES } from '../src/world.js';
 
 const args = process.argv.slice(2);
 const getArg = (name, def) => {
@@ -268,6 +277,17 @@ COURSES.forEach((hole, index) => {
   const cupClear = clearance(world, world.cup.x, world.cup.y);
   if (teeClear < BALL_RADIUS * 2) problems.push(`tee ahtaalla (${teeClear.toFixed(3)})`);
   if (cupClear < world.cup.r + BALL_RADIUS * 2) problems.push(`reikä ahtaalla (${cupClear.toFixed(3)})`);
+
+  // Kaltevuudet ja kiihdytyslaatat eivät saa osua epävakaalle välille, jossa
+  // pallo lähtisi liikkeelle mutta pysähtyisi heti takaisin (nykiminen).
+  for (const zone of world.zones) {
+    if (zone.type !== 'slope' && zone.type !== 'boost') continue;
+    const drive = Math.hypot(zone.ax || 0, zone.ay || 0);
+    const rolling = SURFACES.green.mu * GRAVITY;
+    if (drive > STATIC_FRICTION * rolling && drive <= rolling * 1.05) {
+      problems.push(`${zone.type}-kiihtyvyys ${drive.toFixed(2)} epävakaalla välillä`);
+    }
+  }
 
   const counts = robustnessPass(hole, number * 7919 + 13);
   if (counts.out) problems.push(`karkasi radalta x${counts.out}`);
