@@ -379,6 +379,63 @@ for (let h = 0; h < 18; h++) {
   await page.screenshot({ path: path.join(SHOT_DIR, `hole-${String(h + 1).padStart(2, '0')}.png`) });
 }
 
+// --- Kamera: zoom palautuu eikä lyhyt putti zoomaa ollenkaan --------------
+{
+  await page.evaluate(() => {
+    window.game.hideCard();
+    window.game.loadHole(0);
+    window.game.mode = 'touch';
+  });
+
+  const shot = async (speed) =>
+    page.evaluate(async (v) => {
+      const g = window.game;
+      let peak = 0;
+      g.shoot(0, -1, 0); // nollaa tähtäyksen
+      g.state = 'ready';
+      g.strokes = 0;
+      g.ball.vx = 0;
+      g.ball.vy = 0;
+      g.ball.resting = true;
+      g.shootSpeedOverride = null;
+      // Lyödään suoraan halutulla nopeudella tehokäyrän ohi.
+      g.shoot(0, -1, 1);
+      g.ball.vx = 0;
+      g.ball.vy = -v;
+      g.ball.resting = false;
+      g.shotZoom = v >= 1.3 ? 1.5 : 1;
+      const t0 = performance.now();
+      while (performance.now() - t0 < 20000) {
+        peak = Math.max(peak, g.renderer.cam.zoom);
+        if (g.state !== 'rolling') break;
+        await new Promise((r) => requestAnimationFrame(r));
+      }
+      const rested = performance.now();
+      while (performance.now() - rested < 1500) {
+        await new Promise((r) => requestAnimationFrame(r));
+      }
+      return { peak: +peak.toFixed(3), after: +g.renderer.cam.zoom.toFixed(3), state: g.state };
+    }, speed);
+
+  const hard = await shot(3.5);
+  console.log('kova lyönti:', JSON.stringify(hard));
+  if (hard.after > 1.01) errors.push(`zoom jäi päälle kovan lyönnin jälkeen (${hard.after})`);
+  if (hard.peak < 1.2) errors.push('kova lyönti ei zoomannut lainkaan');
+
+  await page.evaluate(() => {
+    window.game.hideCard();
+    window.game.loadHole(0);
+  });
+  const putt = await shot(0.8);
+  console.log('lyhyt putti:', JSON.stringify(putt));
+  if (putt.peak > 1.05) errors.push(`lyhyt putti zoomasi turhaan (${putt.peak})`);
+
+  await page.evaluate(() => {
+    window.game.hideCard();
+    window.game.loadHole(0);
+  });
+}
+
 // --- Asennettavuus ja koko näyttö -------------------------------------------
 if (!ENTRY) {
   const pwa = await page.evaluate(async () => {

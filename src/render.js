@@ -25,7 +25,8 @@ const COLORS = {
 };
 
 // Kameran lähestymisnopeus (aikavakio sekunteina): pienempi = napakampi.
-const CAM_TAU_ZOOM = 0.35;
+const CAM_TAU_ZOOM_IN = 0.3;
+const CAM_TAU_ZOOM_OUT = 0.22; // paluu koko näkymään on napakampi
 const CAM_TAU_PAN = 0.18;
 
 export class Renderer {
@@ -42,11 +43,20 @@ export class Renderer {
     this.particles = [];
     // Kamera maailmakoordinaateissa: keskipiste ja zoom suhteessa koko radan näkymään.
     this.cam = { x: null, y: null, zoom: 1 };
+    this.insets = { top: 0, bottom: 0 };
+    this.viewTop = 0;
+    this.viewHeight = 0;
     this.following = false;
     this.shake = 0;
   }
 
-  /** Canvaksen koko ja koko radan mahtuva perusmittakaava. */
+  /**
+   * Canvaksen koko ja perusmittakaava.
+   *
+   * Kangas täyttää koko ruudun, mutta rata mitoitetaan ja keskitetään
+   * yläpalkin ja alareunan tekstipalkin väliin jäävään tilaan, jotta ne eivät
+   * peitä pelialuetta. Taustaväri jatkuu palkkien alle.
+   */
   measure(world) {
     const rect = this.canvas.getBoundingClientRect();
     const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
@@ -58,9 +68,21 @@ export class Renderer {
       this.canvas.height = h;
     }
     const pad = 6 * dpr;
-    this.baseScale = Math.min((w - pad * 2) / world.width, (h - pad * 2) / world.height);
+    const top = (this.insets.top || 0) * dpr;
+    const bottom = (this.insets.bottom || 0) * dpr;
+    // Jos palkit veisivät kohtuuttomasti tilaa, pidetään silti puolet korkeudesta.
+    const usable = Math.max(h * 0.5, h - top - bottom - pad * 2);
+    this.viewTop = top + pad;
+    this.viewHeight = usable;
+    this.baseScale = Math.min((w - pad * 2) / world.width, usable / world.height);
     // Koristeiden mittayksikkö suhteessa väylän leveyteen (suunnitteluleveys 3,6).
     this.u = world.width / 3.6;
+  }
+
+  /** Pelialueen ylä- ja alareunaan varattava tila CSS-pikseleinä. */
+  setInsets(top, bottom) {
+    this.insets.top = top;
+    this.insets.bottom = bottom;
   }
 
   /**
@@ -95,9 +117,12 @@ export class Renderer {
       if (firstFrame) this.cam.zoom = targetZoom;
     }
     if (!firstFrame) {
-      const kz = 1 - Math.exp(-dt / CAM_TAU_ZOOM);
+      const tau = targetZoom > this.cam.zoom ? CAM_TAU_ZOOM_IN : CAM_TAU_ZOOM_OUT;
+      const kz = 1 - Math.exp(-dt / tau);
       const kp = 1 - Math.exp(-dt / CAM_TAU_PAN);
       this.cam.zoom += (targetZoom - this.cam.zoom) * kz;
+      // Katkaistaan häntä, ettei kuva jää huomaamattomasti zoomatuksi.
+      if (Math.abs(this.cam.zoom - targetZoom) < 0.01) this.cam.zoom = targetZoom;
       this.cam.x += (tx - this.cam.x) * kp;
       this.cam.y += (ty - this.cam.y) * kp;
     }
@@ -106,7 +131,7 @@ export class Renderer {
 
     // Rajaa näkymä radan sisään, ettei reunan ulkopuolelle jää tyhjää.
     const halfW = this.canvas.width / 2 / this.scale;
-    const halfH = this.canvas.height / 2 / this.scale;
+    const halfH = this.viewHeight / 2 / this.scale;
     const cx = halfW * 2 >= world.width ? world.width / 2 : clamp(this.cam.x, halfW, world.width - halfW);
     const cy = halfH * 2 >= world.height ? world.height / 2 : clamp(this.cam.y, halfH, world.height - halfH);
 
@@ -121,7 +146,7 @@ export class Renderer {
     }
 
     this.offsetX = this.canvas.width / 2 - cx * this.scale + sx;
-    this.offsetY = this.canvas.height / 2 - cy * this.scale + sy;
+    this.offsetY = this.viewTop + this.viewHeight / 2 - cy * this.scale + sy;
   }
 
   /** Yhteensopivuus: pelkkä mittaus ilman kameran päivitystä. */

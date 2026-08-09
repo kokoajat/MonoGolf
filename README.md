@@ -97,13 +97,15 @@ nopeudella painotetun suunnan. Kun puhelin on ollut paikallaan hetken, lyönti l
 Suunta luetaan nimenomaan nopeudesta eikä kiihtyvyyden huipusta: heilautuksen voimakkain
 kiihtyvyyspiikki on usein lopun jarrutus, joka osoittaa vastakkaiseen suuntaan.
 
-Rata täyttää koko ruudun. Radan päällä kelluvat vain tilateksti ja mittarit: *Liike*
-näyttää anturin lukeman reaaliajassa ja *Voima* lyönnin tehon. Kaikki painikkeet ovat
-yläkulman **rataskuvakkeen** takana, eivätkä ne vie tilaa pelialueelta.
+Kangas täyttää koko ruudun, mutta itse rata mitoitetaan yläpalkin ja alareunan
+tekstipalkin väliin, jotta ne eivät peitä pelialuetta. Palkkien korkeus mitataan
+elävästi, joten rata kasvaa heti kun mittarit väistyvät. Kaikki painikkeet ovat
+yläkulman **rataskuvakkeen** takana.
 
-Pallon vieriessä mittaritkin väistyvät ja kamera seuraa palloa: hitaassa vauhdissa
-lähempää, kovassa vauhdissa laajemmalta, jotta pallon eteen ehtii nähdä. Kun pallo
-pysähtyy, näkymä palaa koko väylään.
+Pallon vieriessä kamera seuraa palloa. Zoom valitaan kerran lyönnin alussa: lyhyt putti
+ei zoomaa lainkaan, muuten kuva lähenee kohtuullisesti ja palaa koko väylään heti kun
+pallo pysähtyy. Zoomia ei sidota hetkelliseen nopeuteen, koska jokainen lyönti päättyy
+hitaaseen palloon – silloin kamera olisi tiukimmillaan juuri lyönnin lopussa.
 
 Valikon painikkeet: **Alusta väylä** aloittaa väylän alusta, **Tulokset** avaa
 tuloskortin (jonka riviä napauttamalla voi siirtyä suoraan valitulle väylälle),

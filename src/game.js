@@ -19,11 +19,15 @@ const MIN_SHOT_SPEED = 0.65;
 const MAX_SHOT_SPEED = MAX_SPEED;
 const MAX_DRAG_METERS = 0.9; // täysi voima tällä vetomatkalla
 const SHOT_TIME_LIMIT = 22; // s, tämän jälkeen palloa hidastetaan pakolla
-// Kameran lähennys pallon vieriessä. Hitaana zoomataan lähelle, kovassa
-// vauhdissa laajemmalle, jotta pallon eteen ehtii nähdä.
-const ZOOM_SLOW = 1.75;
-const ZOOM_FAST = 1.15;
-const ZOOM_FAST_SPEED = 3.2; // m/s, tästä ylöspäin laajin kuva
+// Kameran lähennys pallon vieriessä.
+//
+// Zoom valitaan kerran lyönnin alussa eikä sitä sidota hetkelliseen nopeuteen:
+// jokainen lyönti päättyy hitaaseen palloon, joten nopeuteen sidottu zoom oli
+// aina tiukimmillaan juuri lyönnin lopussa. Lähellä reikää, jossa putit ovat
+// lyhyitä ja peräkkäisiä, kamera ei ehtinyt palata lainkaan.
+const PLAY_ZOOM = 1.5;
+// Lyhyt putti ei tarvitse kameraliikettä ollenkaan.
+const ZOOM_MIN_SHOT_SPEED = 1.3; // m/s
 
 const STORAGE_KEY = 'monogolf.v1';
 
@@ -74,6 +78,7 @@ export class Game {
       menuNote: root.querySelector('#menuNote'),
       overlay: root.querySelector('#overlay'),
       overlayCard: root.querySelector('#overlayCard'),
+      topbar: root.querySelector('.topbar'),
       hud: root.querySelector('#hud'),
       menu: root.querySelector('#menu'),
       btnMenu: root.querySelector('#btnMenu'),
@@ -98,9 +103,12 @@ export class Game {
     this.aim = { dirX: 0, dirY: -1, power: 0.5, visible: false, fromTouch: false };
     this.drag = null;
     this.shotTime = 0;
+    this.shotZoom = 1;
     this.safeSpot = null;
     this.lastFrame = 0;
     this.time = 0;
+    this.insetTop = 0;
+    this.insetBottom = 0;
 
     this.loadProgress();
     this.bindUI();
@@ -538,6 +546,7 @@ export class Game {
     const p = Math.max(0, Math.min(1, power));
     const speed = MIN_SHOT_SPEED + Math.pow(p, 1.15) * (MAX_SHOT_SPEED - MIN_SHOT_SPEED);
     launchBall(this.ball, dirX, dirY, speed);
+    this.shotZoom = speed >= ZOOM_MIN_SHOT_SPEED ? PLAY_ZOOM : 1;
     this.strokes++;
     this.shotTime = 0;
     this.state = 'rolling';
@@ -911,6 +920,7 @@ export class Game {
       // Pallo pysähtyi kaltevalle pinnalle: painovoima jatkaa työtään.
       this.ball.resting = false;
       this.state = 'rolling';
+      this.shotZoom = 1;
       this.shotTime = 0;
       this.setStatus('Pallo vierii rinnettä alas.');
       this.motion.disarm();
@@ -939,6 +949,7 @@ export class Game {
       this.root.classList.toggle('is-playing', playing);
     }
 
+    this.syncInsets();
     this.ball.spinAngle = (this.ball.spinAngle || 0) + this.ball.w * dt;
 
     if (this.state === 'ready' && this.mode === 'swing') {
@@ -958,6 +969,27 @@ export class Game {
     requestAnimationFrame((n) => this.loop(n));
   }
 
+  /**
+   * Kertoo renderöijälle, paljonko tilaa yläpalkki ja tekstipalkki vievät,
+   * jotta rata mahtuu niiden väliin. Mitataan DOMista, koska tekstin määrä
+   * ja turva-alueet vaihtelevat laitteittain.
+   */
+  syncInsets() {
+    const top = this.el.topbar?.offsetHeight || 0;
+    const hud = this.el.hud;
+    const stage = this.el.canvas.getBoundingClientRect();
+    let bottom = 0;
+    if (hud && !hud.hidden) {
+      const r = hud.getBoundingClientRect();
+      bottom = Math.max(0, stage.bottom - r.top + 8);
+    }
+    if (top !== this.insetTop || Math.abs(bottom - this.insetBottom) > 1) {
+      this.insetTop = top;
+      this.insetBottom = bottom;
+      this.renderer.setInsets(top, bottom);
+    }
+  }
+
   /** Onko pallo pinnalla, joka lähtee vierittämään sitä itsestään? */
   ballWouldRoll() {
     const surf = this.world.surfaceAt(this.ball.x, this.ball.y);
@@ -967,9 +999,7 @@ export class Game {
   /** Pelin aikana kamera seuraa palloa lähempää, muuten koko väylä näkyy. */
   cameraTarget() {
     if (this.state !== 'rolling') return { zoom: 1, follow: null };
-    const speed = Math.hypot(this.ball.vx, this.ball.vy);
-    const t = Math.min(1, speed / ZOOM_FAST_SPEED);
-    return { zoom: ZOOM_SLOW + (ZOOM_FAST - ZOOM_SLOW) * t, follow: this.ball };
+    return { zoom: this.shotZoom || 1, follow: this.ball };
   }
 
   onBallStopped() {
