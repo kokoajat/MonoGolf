@@ -117,6 +117,37 @@ kierros jatkuu seuraavalla käynnistyksellä siltä väylältä, jolle se jäi �
 kertoo tämän ja tarjoaa myös aloituksen alusta. Loppuun pelattu kierros nollautuu
 itsestään.
 
+## Kaukosäädin: toinen puhelin mailaksi
+
+Peliä voi pelata kahdella puhelimella: toinen on **näyttö** (pöydällä tai tuettuna) ja
+toinen **maila**, jota heilautetaan oikeassa golfin lyöntiasennossa. Suunta asetetaan
+näytön ruudulta sormella ja voima tulee mailan heilautuksesta; mailan asentoa
+lyöntiasennossa ei voi päätellä luotettavasti, joten sitä ei käytetä suuntaan.
+
+Yhteys on **suora laitteiden välinen WebRTC-datakanava** – välityspalvelinta ei ole.
+Kättely tehdään QR-koodeilla valikon **Kaukosäädin**-painikkeesta:
+
+1. Näyttöpuhelimessa *Tämä on näyttö* → ruudulle ilmestyy parikoodi.
+2. Mailapuhelimessa *Tämä on maila* → skannaa näytön koodi.
+3. Maila näyttää vastauskoodin.
+4. Näyttö skannaa sen, ja yhteys aukeaa.
+
+Rajoitukset: skannaus käyttää selaimen omaa `BarcodeDetector`-rajapintaa, joka on
+Chromessa (Android) muttei iOS-Safarissa. Molemmat laitteet tarvitsevat kameraluvan, ja
+maila tarvitsee liikeanturiluvan.
+
+### Miten SDP mahtuu QR-koodiin
+
+Selaimen tuottama SDP-kuvaus on 1–2 kt eli liian pitkä kätevästi skannattavaksi.
+`src/remote.js` poimii siitä vain yhteyden muodostukseen tarvittavat kentät – ICE-
+tunnisteet, sormenjäljen ja ehdokkaat – ja kokoaa kuvauksen takaisin vastaanottavassa
+päässä. Tiiviste on käytännössä alle 300 merkkiä, joten se mahtuu yhteen pieneen
+koodiin; pidemmät jaetaan vuorotteleviin ruutuihin, jotka skanneri kokoaa takaisin.
+
+QR-koodit muodostetaan itse (`src/qr.js`, ISO/IEC 18004, tavutila, versiot 1–40) eikä
+peli käytä ulkoisia kirjastoja. Oikeellisuus varmistetaan testeissä dekoodaamalla tulos
+jsQR:llä, joka on pelkkä kehitysriippuvuus.
+
 ## Fysiikkamalli
 
 Kaikki lasketaan SI-yksiköissä ja oikeilla mitoilla: pallon halkaisija 4,3 cm ja massa
@@ -185,6 +216,10 @@ src/sensors.js      devicemotion-luku ja heilautuksen tunnistus
 src/render.js       canvas-piirto
 src/audio.js        WebAudio-tehosteet
 src/game.js         tilakone, syötteet ja käyttöliittymä
+src/qr.js           QR-koodin muodostus (ei riippuvuuksia)
+src/remote.js       WebRTC-yhteys ja SDP:n tiivistys QR-kokoiseksi
+src/scanner.js      QR-koodin luku kameralla (BarcodeDetector)
+src/remoteui.js     laiteparin muodostus ja mailapuhelimen näkymä
 manifest.webmanifest  asennettavan sovelluksen määrittely
 sw.js                 välimuisti ja offline-tuki
 icons/                sovelluskuvakkeet
@@ -195,9 +230,12 @@ tools/icons.mjs       generoi kuvakkeet
 ### Testit
 
 ```bash
-npm test              # molemmat alla olevat
+npm install           # kehitysriippuvuudet (vain testeihin)
+npm test              # kaikki alla olevat, sekä lähteitä että koostetta vasten
 npm run test:courses  # fysiikka + ratojen tarkistus (headless, ei selainta)
+npm run test:qr       # QR-generaattori dekoodataan jsQR:llä
 npm run test:browser  # Chromium: käyttöliittymä ja anturiohjaus
+npm run test:remote   # kaksi selainsivua: WebRTC-yhteys ja mailan heilautus
 npm run build         # julkaistava sivusto dist/
 npm run test:dist     # sama selaintesti julkaistavaa koostetta vasten
 ```
@@ -206,6 +244,16 @@ npm run test:dist     # sama selaintesti julkaistavaa koostetta vasten
 väylältä, että tiiaus ja reikä ovat kelvollisissa paikoissa, ettei pallo karkaa radalta
 tai päädy NaN-tilaan satunnaisilla lyönneillä ja että reikä on saavutettavissa
 (ruudukkoon laskettu etäisyyskenttä + lyöntejä kokeileva botti).
+
+`tools/qrtest.mjs` koodaa satoja hyötykuormia kaikilla versioilla ja korjaustasoilla ja
+dekoodaa tuloksen. Lisäksi se tarkistaa kohdistuskuvioiden taulukon standardin kaavaa
+vasten ja vapaiden datamoduulien määrän – jsQR:n omassa taulukossa on virhe versiolle
+23, joten se versio ohitetaan dekoodauskierrokselta.
+
+`tools/remotetest.mjs` avaa kaksi selainsivua, muodostaa niiden välille oikean
+WebRTC-datakanavan (QR ohitetaan siirtämällä tiiviste suoraan) ja varmistaa, että mailan
+heilautus laukaisee lyönnin tähtäyssuuntaan ja että maila saa pelin tilannekuvan. Lopuksi
+se lukee ruudulla näkyvän QR-koodin takaisin pikseleistä ja vertaa sitä parikoodiin.
 
 `tools/smoke.mjs` käynnistää pelin Chromiumissa, pelaa kosketuslyöntejä, syöttää
 synteettisiä `devicemotion`-tapahtumia ja varmistaa, että heilautus laukaisee lyönnin

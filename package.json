@@ -6,12 +6,14 @@
   "private": true,
   "scripts": {
     "start": "npx --yes http-server -p 8080 -c-1 .",
-    "test": "node tools/simulate.mjs && node tools/smoke.mjs && node tools/bundle.mjs && node tools/smoke.mjs --root dist",
+    "test": "node tools/simulate.mjs && node tools/qrtest.mjs && node tools/smoke.mjs && node tools/remotetest.mjs && node tools/bundle.mjs && node tools/smoke.mjs --root dist && node tools/remotetest.mjs --root dist",
     "test:courses": "node tools/simulate.mjs",
     "test:browser": "node tools/smoke.mjs",
     "build": "node tools/bundle.mjs",
     "build:standalone": "node tools/bundle.mjs --standalone",
-    "test:dist": "node tools/bundle.mjs && node tools/smoke.mjs --root dist"
+    "test:dist": "node tools/bundle.mjs && node tools/smoke.mjs --root dist",
+    "test:qr": "node tools/qrtest.mjs",
+    "test:remote": "node tools/remotetest.mjs"
   },
   "keywords": [
     "minigolf",
@@ -19,5 +21,8 @@
     "devicemotion",
     "peli"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "jsqr": "^1.4.0"
+  }
 }

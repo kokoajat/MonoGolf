@@ -1,4 +1,12 @@
 import { Game } from './game.js';
+import { encodeQR, drawQR } from './qr.js';
+import {
+  RemoteLink,
+  packDescription,
+  unpackDescription,
+  toChunks,
+  ChunkCollector,
+} from './remote.js';
 
 function start() {
   const root = document.getElementById('app');
@@ -11,6 +19,17 @@ function start() {
     { passive: false },
   );
   window.game = new Game(root);
+  // Julkinen rajapinta testejä ja vianetsintää varten. Koosteessa erillisiä
+  // moduulitiedostoja ei ole, joten tämä on ainoa tapa päästä niihin käsiksi.
+  window.MonoGolf = {
+    encodeQR,
+    drawQR,
+    RemoteLink,
+    packDescription,
+    unpackDescription,
+    toChunks,
+    ChunkCollector,
+  };
 
   // Service worker tekee pelistä asennettavan ja pelattavan ilman verkkoa.
   // Yhden tiedoston koosteessa sitä ei ole, joten rekisteröinti ohitetaan.

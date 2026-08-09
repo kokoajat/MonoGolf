@@ -78,11 +78,53 @@
           <button id="btnSensors">Ota anturit käyttöön</button>
           <button id="btnMode">Tila: heilautus</button>
           <button id="btnSound" aria-label="Äänet päällä">🔊</button>
+          <button id="btnRemote">Kaukosäädin</button>
           <button id="btnFullscreen">Koko näyttö</button>
           <button id="btnReset">Alusta väylä</button>
           <button id="btnScore">Tulokset</button>
           <button id="btnNewGame" class="ghost">Nollaa peli</button>
         </div>
+      </section>
+
+      <!-- Laiteparin muodostus QR-koodeilla. -->
+      <section id="remote" class="sheet" hidden>
+        <div class="menu-head">
+          <h2 id="remoteTitle">Kaukosäädin</h2>
+          <button id="remoteClose" class="icon" aria-label="Sulje">✕</button>
+        </div>
+        <p class="hint" id="remoteStatus"></p>
+
+        <div id="remoteRoles" class="controls">
+          <button id="btnRoleScreen" class="primary">Tämä on näyttö</button>
+          <button id="btnRoleClub">Tämä on maila</button>
+        </div>
+
+        <div id="remoteStage" hidden>
+          <div id="remoteQrWrap" class="qr-wrap">
+            <canvas id="remoteQr"></canvas>
+          </div>
+          <div id="remoteScanWrap" class="scan-wrap" hidden>
+            <video id="remoteVideo" muted playsinline></video>
+          </div>
+          <p class="hint" id="remoteFrames"></p>
+          <div class="controls">
+            <button id="remoteNext" hidden></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Mailapuhelimen oma näkymä. -->
+      <section id="controller" class="controller" hidden>
+        <div class="controller-info">
+          <span id="controllerHole">–</span>
+          <span id="controllerStrokes"></span>
+        </div>
+        <div class="controller-main">
+          <div class="swing-ring"><span>Heilauta</span></div>
+          <p class="controller-status" id="controllerStatus"></p>
+        </div>
+        <div class="bar wide"><div class="fill power" id="controllerPower"></div></div>
+        <button id="controllerLeave" class="ghost">Katkaise yhteys</button>
       </section>
 
       <div id="overlay" class="overlay" hidden>

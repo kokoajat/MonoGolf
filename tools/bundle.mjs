@@ -23,6 +23,10 @@ const MODULES = [
   'src/sensors.js',
   'src/audio.js',
   'src/render.js',
+  'src/qr.js',
+  'src/remote.js',
+  'src/scanner.js',
+  'src/remoteui.js',
   'src/game.js',
   'src/main.js',
 ];

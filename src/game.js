@@ -14,6 +14,7 @@ import {
 import { Renderer } from './render.js';
 import { MotionInput, motionSupported, needsMotionPermission } from './sensors.js';
 import { Sfx } from './audio.js';
+import { RemoteUI } from './remoteui.js';
 
 const MIN_SHOT_SPEED = 0.65;
 const MAX_SHOT_SPEED = MAX_SPEED;
@@ -76,6 +77,27 @@ export class Game {
       btnFullscreen: root.querySelector('#btnFullscreen'),
       installHint: root.querySelector('#installHint'),
       menuNote: root.querySelector('#menuNote'),
+      btnRemote: root.querySelector('#btnRemote'),
+      remote: root.querySelector('#remote'),
+      remoteTitle: root.querySelector('#remoteTitle'),
+      remoteStatus: root.querySelector('#remoteStatus'),
+      remoteRoles: root.querySelector('#remoteRoles'),
+      remoteStage: root.querySelector('#remoteStage'),
+      remoteQr: root.querySelector('#remoteQr'),
+      remoteQrWrap: root.querySelector('#remoteQrWrap'),
+      remoteScanWrap: root.querySelector('#remoteScanWrap'),
+      remoteVideo: root.querySelector('#remoteVideo'),
+      remoteFrames: root.querySelector('#remoteFrames'),
+      remoteNext: root.querySelector('#remoteNext'),
+      remoteClose: root.querySelector('#remoteClose'),
+      btnRoleScreen: root.querySelector('#btnRoleScreen'),
+      btnRoleClub: root.querySelector('#btnRoleClub'),
+      controller: root.querySelector('#controller'),
+      controllerHole: root.querySelector('#controllerHole'),
+      controllerStrokes: root.querySelector('#controllerStrokes'),
+      controllerStatus: root.querySelector('#controllerStatus'),
+      controllerPower: root.querySelector('#controllerPower'),
+      controllerLeave: root.querySelector('#controllerLeave'),
       overlay: root.querySelector('#overlay'),
       overlayCard: root.querySelector('#overlayCard'),
       topbar: root.querySelector('.topbar'),
@@ -87,6 +109,8 @@ export class Game {
     this.root = root;
     this.playing = false;
 
+    this.remote = null;
+    this.remoteUI = null;
     this.renderer = new Renderer(this.el.canvas);
     this.sfx = new Sfx();
     this.motion = new MotionInput();
@@ -115,6 +139,7 @@ export class Game {
     this.bindMotion();
     this.bindPointer();
 
+    this.remoteUI = new RemoteUI(this);
     this.loadHole(this.holeIndex, true);
     this.showIntro();
     requestAnimationFrame((t) => this.loop(t));
@@ -186,6 +211,10 @@ export class Game {
       this.confirmNewGame();
     });
     this.el.btnMenu.addEventListener('click', () => this.toggleMenu());
+    this.el.btnRemote.addEventListener('click', () => {
+      this.setMenuOpen(false);
+      this.remoteUI.open();
+    });
     this.el.btnFullscreen.addEventListener('click', () => this.toggleFullscreen());
     document.addEventListener('fullscreenchange', () => this.updateChrome());
     document.addEventListener('webkitfullscreenchange', () => this.updateChrome());
@@ -515,6 +544,12 @@ export class Game {
   }
 
   armIfReady() {
+    // Kaukosäätimen ollessa kytkettynä lyönti tulee mailasta, joten näytön
+    // omat anturit pidetään pois päältä.
+    if (this.remoteConnected) {
+      this.motion.disarm();
+      return;
+    }
     const wantsMotion = this.mode !== 'touch';
     const uiBlocked = !this.el.overlay.hidden || !this.el.menu.hidden;
     if (!uiBlocked && this.state === 'ready' && wantsMotion && this.motion.permission === 'granted') {
@@ -950,6 +985,7 @@ export class Game {
     }
 
     this.syncInsets();
+    this.sendRemoteState();
     this.ball.spinAngle = (this.ball.spinAngle || 0) + this.ball.w * dt;
 
     if (this.state === 'ready' && this.mode === 'swing') {
@@ -988,6 +1024,64 @@ export class Game {
       this.insetBottom = bottom;
       this.renderer.setInsets(top, bottom);
     }
+  }
+
+  // --- Kaukosäädin ----------------------------------------------------------
+
+  /** Kytkee tai irrottaa mailapuhelimen. */
+  setRemote(link) {
+    if (this.remote && this.remoteHandler) {
+      this.remote.removeEventListener('message', this.remoteHandler);
+    }
+    this.remote = link;
+    if (link) {
+      // Peli kuuntelee kanavaa itse, jottei se ole riippuvainen siitä että
+      // parikytkennän käyttöliittymä välittäisi viestit eteenpäin.
+      this.remoteHandler = (e) => this.onRemoteMessage(e.detail);
+      link.addEventListener('message', this.remoteHandler);
+      // Suunta asetetaan ruudulta sormella, voima tulee mailasta: mailan
+      // asentoa lyöntiasennossa ei voi päätellä luotettavasti.
+      this.mode = 'aim';
+      this.aim.visible = true;
+      this.motion.disarm();
+    }
+    this.updateChrome();
+    this.sendRemoteState(true);
+  }
+
+  get remoteConnected() {
+    return !!this.remote && this.remote.connected;
+  }
+
+  onRemoteMessage(msg) {
+    if (msg.t === 'swing') {
+      if (this.state !== 'ready' || !this.el.overlay.hidden || !this.el.menu.hidden) return;
+      this.shoot(this.aim.dirX, this.aim.dirY, msg.power);
+      this.remote?.send({ t: 'shot' });
+    } else if (msg.t === 'motion') {
+      const level = Math.min(1, msg.level / 25);
+      this.el.motionFill.style.width = `${level * 100}%`;
+      this.el.motionRow.hidden = false;
+    }
+  }
+
+  /** Lähettää mailalle tilannekuvan; vain muutokset menevät läpi. */
+  sendRemoteState(force = false) {
+    if (!this.remoteConnected) return;
+    const hole = COURSES[this.holeIndex];
+    const ready = this.state === 'ready' && this.el.overlay.hidden && this.el.menu.hidden;
+    const snapshot = `${this.holeIndex}|${this.strokes}|${ready}|${this.el.status.textContent}`;
+    if (!force && snapshot === this.lastRemoteSnapshot) return;
+    this.lastRemoteSnapshot = snapshot;
+    this.remote.send({
+      t: 'state',
+      hole: this.holeIndex + 1,
+      name: hole.name,
+      par: hole.par,
+      strokes: this.strokes,
+      ready,
+      status: ready ? 'Ota lyöntiasento ja heilauta.' : this.el.status.textContent,
+    });
   }
 
   /** Onko pallo pinnalla, joka lähtee vierittämään sitä itsestään? */
