@@ -26,16 +26,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Sivusto julkaistaan yhtenä HTML-tiedostona. Erillisinä tiedostoina
+      # selain tai CDN voisi tarjoilla uuden sivun vanhojen tyylien ja
+      # skriptien kanssa; koosteena päivitys on atominen.
+      - name: Koosta sivusto
+        run: node tools/bundle.mjs
+
       - name: Ota Pages käyttöön
         uses: actions/configure-pages@v5
         with:
           enablement: true
 
-      # Peli on staattinen: koko repo tarjoillaan sellaisenaan.
       - name: Pakkaa sivusto
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: dist
 
       - name: Julkaise
         id: deployment

@@ -4,19 +4,12 @@
 // muut tiedostot tarjoillaan välimuistista ja päivitetään taustalla.
 
 const VERSION = 'monogolf-v2';
+// Julkaistu sivusto on yksi HTML-tiedosto, joten välimuistiin riittää se
+// ja kuvakkeet. VERSION korvataan käännöksessä sisällön tiivisteellä.
 const ASSETS = [
   '.',
   'index.html',
-  'styles.css',
   'manifest.webmanifest',
-  'src/main.js',
-  'src/game.js',
-  'src/physics.js',
-  'src/world.js',
-  'src/courses.js',
-  'src/render.js',
-  'src/sensors.js',
-  'src/audio.js',
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/apple-touch-icon.png',

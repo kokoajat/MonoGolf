@@ -6,10 +6,12 @@
   "private": true,
   "scripts": {
     "start": "npx --yes http-server -p 8080 -c-1 .",
-    "test": "node tools/simulate.mjs && node tools/smoke.mjs",
+    "test": "node tools/simulate.mjs && node tools/smoke.mjs && node tools/bundle.mjs && node tools/smoke.mjs --root dist",
     "test:courses": "node tools/simulate.mjs",
     "test:browser": "node tools/smoke.mjs",
-    "build": "node tools/bundle.mjs"
+    "build": "node tools/bundle.mjs",
+    "build:standalone": "node tools/bundle.mjs --standalone",
+    "test:dist": "node tools/bundle.mjs && node tools/smoke.mjs --root dist"
   },
   "keywords": [
     "minigolf",

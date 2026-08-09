@@ -71,6 +71,7 @@ export class Game {
       btnNewGame: root.querySelector('#btnNewGame'),
       btnFullscreen: root.querySelector('#btnFullscreen'),
       installHint: root.querySelector('#installHint'),
+      menuNote: root.querySelector('#menuNote'),
       overlay: root.querySelector('#overlay'),
       overlayCard: root.querySelector('#overlayCard'),
       hud: root.querySelector('#hud'),
@@ -385,14 +386,36 @@ export class Game {
     );
   }
 
+  async requestFullscreen() {
+    // Osa selaimista kieltäytyy juurielementistä mutta suostuu sovelluksen
+    // säiliöön, joten kokeillaan molempia.
+    const targets = [document.documentElement, this.root];
+    let lastError = null;
+    for (const el of targets) {
+      try {
+        if (el.requestFullscreen) {
+          await el.requestFullscreen({ navigationUI: 'hide' });
+          return true;
+        }
+        if (el.webkitRequestFullscreen) {
+          await el.webkitRequestFullscreen();
+          return true;
+        }
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw lastError || new Error('Fullscreen API puuttuu');
+  }
+
   async toggleFullscreen() {
+    this.setMenuNote('');
     try {
       if (this.isFullscreen()) {
         await (document.exitFullscreen?.() ?? document.webkitExitFullscreen?.());
         this.wantsFullscreen = false;
       } else {
-        const el = document.documentElement;
-        await (el.requestFullscreen?.({ navigationUI: 'hide' }) ?? el.webkitRequestFullscreen?.());
+        await this.requestFullscreen();
         this.wantsFullscreen = true;
         // Peli on pystysuuntainen; lukitus onnistuu vain koko näytössä eikä
         // kaikilla selaimilla – epäonnistuminen ei haittaa.
@@ -402,11 +425,17 @@ export class Game {
           /* ei tuettu */
         }
       }
-    } catch {
-      this.setStatus('Selain ei antanut siirtyä koko näyttöön.');
+    } catch (err) {
+      // Virhe näytetään valikossa: tilarivi on valikon alla piilossa.
+      this.setMenuNote(`Selain ei antanut siirtyä koko näyttöön (${err?.name || 'virhe'}).`);
     }
     this.saveProgress();
     this.updateChrome();
+  }
+
+  setMenuNote(text) {
+    this.el.menuNote.textContent = text;
+    this.el.menuNote.hidden = !text;
   }
 
   /** Palauttaa koko näytön käyttäjän eleestä, jos se oli viime kerralla päällä. */
@@ -429,6 +458,7 @@ export class Game {
   }
 
   toggleMenu() {
+    if (this.el.menu.hidden) this.setMenuNote('');
     this.setMenuOpen(this.el.menu.hidden);
   }
 

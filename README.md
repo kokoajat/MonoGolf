@@ -55,9 +55,15 @@ Kuvakkeet generoidaan komennolla `node tools/icons.mjs` (Chromium rasteroi SVG:n
 
 Peli on julkaistu osoitteeseen **https://kokoajat.github.io/MonoGolf/**.
 
-`.github/workflows/pages.yml` julkaisee sivuston uudelleen jokaisella pushilla tämän
-haaran tai `main`in päälle, ja sen voi ajaa myös käsin (**Actions → "Julkaise GitHub
-Pagesiin" → Run workflow**).
+`.github/workflows/pages.yml` kokoaa pelin ja julkaisee sen uudelleen jokaisella
+pushilla tämän haaran tai `main`in päälle. Sen voi ajaa myös käsin (**Actions →
+"Julkaise GitHub Pagesiin" → Run workflow**).
+
+Julkaistava sivusto on **yksi HTML-tiedosto** (`npm run build` → `dist/`). Erillisinä
+tiedostoina selain tai CDN voi tarjoilla uuden `index.html`:n vanhan `styles.css`:n ja
+`src/*.js`:n kanssa – silloin peliin ilmestyy painikkeita, joita vanha koodi ei tunne.
+Koosteena päivitys on atominen. Service workerin versio sidotaan koosteen tiivisteeseen,
+joten uusi julkaisu ei jää välimuistin taakse.
 
 Forkkia varten: Pages pitää kytkeä kerran päälle repon asetuksista
 (**Settings → Pages → Build and deployment → Source: GitHub Actions**), koska
@@ -65,11 +71,11 @@ workflowin oma token ei saa luoda Pages-sivustoa.
 
 ### Yhden tiedoston versio
 
-`npm run build` kokoaa koko pelin yhdeksi tiedostoksi `dist/index.html` (n. 90 kt, ei
-ulkoisia viittauksia). Sen voi pudottaa mihin tahansa staattiseen hostiin tai lähettää
-sellaisenaan – kaikki 18 väylää, fysiikka ja anturituki ovat mukana. Koosteessa ei ole
-manifestia eikä service workeria, joten sitä ei voi asentaa aloitusnäytölle; siihen
-käytetään varsinaista sivustoa.
+`npm run build:standalone` kokoaa pelin yhdeksi täysin itsenäiseksi tiedostoksi
+`dist/monogolf.html` (n. 108 kt). Sen voi lähettää sellaisenaan tai avata mistä tahansa –
+kaikki 18 väylää, fysiikka ja anturituki ovat mukana. Tässä versiossa ei ole manifestia
+eikä service workeria, joten sitä ei voi asentaa aloitusnäytölle; siihen käytetään
+varsinaista sivustoa.
 
 ## Ohjaus
 
@@ -190,11 +196,9 @@ tools/icons.mjs       generoi kuvakkeet
 npm test              # molemmat alla olevat
 npm run test:courses  # fysiikka + ratojen tarkistus (headless, ei selainta)
 npm run test:browser  # Chromium: käyttöliittymä ja anturiohjaus
-npm run build         # yhden tiedoston kooste dist/index.html
+npm run build         # julkaistava sivusto dist/
+npm run test:dist     # sama selaintesti julkaistavaa koostetta vasten
 ```
-
-Koosteen voi testata samalla testillä:
-`node tools/smoke.mjs --entry dist/index.html`.
 
 `tools/simulate.mjs` ajaa fysiikkamoottoria ilman selainta ja tarkistaa jokaiselta
 väylältä, että tiiaus ja reikä ovat kelvollisissa paikoissa, ettei pallo karkaa radalta

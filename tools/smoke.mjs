@@ -25,14 +25,16 @@ function loadPlaywright() {
 }
 const { chromium } = loadPlaywright();
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const getArg = (n, d) => {
   const i = args.indexOf(n);
   return i >= 0 ? args[i + 1] : d;
 };
+// --root dist testaa julkaistavan koosteen, oletuksena moduuliversio.
+const root = path.resolve(repoRoot, getArg('--root', '.'));
 const SHOTS = Number(getArg('--shots', 3));
-const SHOT_DIR = getArg('--shot-dir', path.join(root, '.shots'));
+const SHOT_DIR = path.resolve(repoRoot, getArg('--shot-dir', '.shots'));
 // Oletuksena testataan moduuliversiota; --entry dist/index.html testaa koosteen.
 const ENTRY = getArg('--entry', '');
 

@@ -1,16 +1,21 @@
-// Kokoaa pelin yhdeksi HTML-tiedostoksi (dist/index.html).
+// Kokoaa pelin yhdeksi HTML-tiedostoksi.
 //
-// Moduulit liitetään peräkkäin riippuvuusjärjestyksessä ja import/export-rivit
-// poistetaan. Kaikki tunnisteet ovat yksilöllisiä moduulien kesken, joten
-// yhdistäminen samaan näkyvyysalueeseen on turvallista.
+//   node tools/bundle.mjs              -> dist/ (julkaistava sivusto)
+//   node tools/bundle.mjs --standalone -> dist/monogolf.html (yksi tiedosto)
 //
-//   node tools/bundle.mjs
+// Miksi kooste myös julkaisuun: kun tyylit ja moduulit ovat erillisinä
+// tiedostoina, selain tai CDN voi tarjoilla uuden index.html:n vanhan
+// styles.css:n ja src/*.js:n kanssa. Silloin peliin ilmestyy painikkeita,
+// joita vanha koodi ei tunne. Yhtenä tiedostona sivu päivittyy atomisesti.
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const STANDALONE = process.argv.includes('--standalone');
+
 const MODULES = [
   'src/physics.js',
   'src/world.js',
@@ -39,16 +44,17 @@ const parts = MODULES.map((rel) => {
   return `// ===== ${rel} ${'='.repeat(Math.max(0, 66 - rel.length))}\n${stripModuleSyntax(src, rel)}`;
 });
 
-// Kooste on yksi tiedosto: erillisiä manifestia, kuvakkeita tai service
-// workeria ei ole, joten niihin viittaaminen tuottaisi vain 404-virheitä.
-const prelude = 'window.__MONOGOLF_SINGLE_FILE__ = true;';
-
 const css = fs.readFileSync(path.join(root, 'styles.css'), 'utf8').trim();
 let html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 
-html = html
-  .replace(/[ \t]*<link rel="manifest"[^>]*>\n/, '')
-  .replace(/[ \t]*<link rel="apple-touch-icon"[^>]*>\n/, '');
+if (STANDALONE) {
+  // Yksittäisen tiedoston mukana ei kulje manifestia, kuvakkeita eikä
+  // service workeria, joten niihin viittaaminen tuottaisi vain 404-virheitä.
+  html = html
+    .replace(/[ \t]*<link rel="manifest"[^>]*>\n/, '')
+    .replace(/[ \t]*<link rel="apple-touch-icon"[^>]*>\n/, '');
+}
+const prelude = STANDALONE ? 'window.__MONOGOLF_SINGLE_FILE__ = true;\n\n' : '';
 
 const before = html;
 html = html.replace(
@@ -57,18 +63,43 @@ html = html.replace(
 );
 html = html.replace(
   /[ \t]*<script type="module" src="src\/main\.js"><\/script>\n/,
-  `    <script>\n${prelude}\n\n${parts.join('\n\n')}\n    </script>\n`,
+  `    <script>\n${prelude}${parts.join('\n\n')}\n    </script>\n`,
 );
 if (html === before) {
   throw new Error('index.html: tyyli- tai skriptiviittausta ei löytynyt');
 }
 html = html.replace(
   '<title>',
-  '<!-- Koostettu tiedostosta index.html + src/*.js komennolla: node tools/bundle.mjs -->\n    <title>',
+  '<!-- Koostettu komennolla: node tools/bundle.mjs -->\n    <title>',
 );
 
 const outDir = path.join(root, 'dist');
+// Sivustokäännös siivoaa hakemiston; yksittäistiedosto kirjoitetaan sen viereen.
+if (!STANDALONE) fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(outDir, { recursive: true });
-const outFile = path.join(outDir, 'index.html');
-fs.writeFileSync(outFile, html);
-console.log(`dist/index.html kirjoitettu (${(html.length / 1024).toFixed(1)} kt)`);
+
+if (STANDALONE) {
+  const outFile = path.join(outDir, 'monogolf.html');
+  fs.writeFileSync(outFile, html);
+  console.log(`dist/monogolf.html (${(html.length / 1024).toFixed(1)} kt)`);
+} else {
+  fs.writeFileSync(path.join(outDir, 'index.html'), html);
+  fs.copyFileSync(
+    path.join(root, 'manifest.webmanifest'),
+    path.join(outDir, 'manifest.webmanifest'),
+  );
+  fs.cpSync(path.join(root, 'icons'), path.join(outDir, 'icons'), { recursive: true });
+
+  // Service workerin versio sidotaan sisältöön, jotta uusi julkaisu ei jää
+  // vanhan välimuistin taakse.
+  const stamp = crypto.createHash('sha256').update(html).digest('hex').slice(0, 12);
+  const sw = fs
+    .readFileSync(path.join(root, 'sw.js'), 'utf8')
+    .replace(/const VERSION = '[^']*';/, `const VERSION = 'monogolf-${stamp}';`);
+  fs.writeFileSync(path.join(outDir, 'sw.js'), sw);
+
+  const files = fs.readdirSync(outDir);
+  console.log(
+    `dist/: ${files.join(', ')} – index.html ${(html.length / 1024).toFixed(1)} kt, sw ${stamp}`,
+  );
+}

@@ -304,7 +304,10 @@ button.icon:active {
   margin-top: 10px;
 }
 
-#btnSensors {
+/* Oletuksena painike vie koko rivin; vain parit määritellään kapeammiksi.
+   Näin uusi painike ei koskaan päädy yhden sarakkeen siivuksi, vaikka
+   tyylit ja merkkaus olisivat hetkellisesti eri versioista. */
+.controls button {
   grid-column: 1 / -1;
 }
 
@@ -316,17 +319,9 @@ button.icon:active {
   grid-column: span 2;
 }
 
-#btnFullscreen {
-  grid-column: 1 / -1;
-}
-
 #btnReset,
 #btnScore {
   grid-column: span 3;
-}
-
-#btnNewGame {
-  grid-column: 1 / -1;
 }
 
 button.ghost {
@@ -485,6 +480,10 @@ button.primary {
 
 .total-line {
   font-weight: 600;
+}
+
+.hint.note {
+  color: var(--warn);
 }
 
 .card p.note {
