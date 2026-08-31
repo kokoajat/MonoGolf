@@ -85,7 +85,17 @@ if (STANDALONE) {
     .replace(/[ \t]*<link rel="manifest"[^>]*>\n/, '')
     .replace(/[ \t]*<link rel="apple-touch-icon"[^>]*>\n/, '');
 }
-const prelude = STANDALONE ? 'window.__MONOGOLF_SINGLE_FILE__ = true;\n\n' : '';
+// Näkyvä versioleima (valikon alareunassa), jotta laitteelta voi tarkistaa
+// mikä käännös siinä oikeasti pyörii – välimuisti voi tarjoilla vanhaa.
+const buildStamp = crypto
+  .createHash('sha256')
+  .update(parts.join('\n') + css)
+  .digest('hex')
+  .slice(0, 7);
+const prelude =
+  `window.__MONOGOLF_BUILD__ = '${buildStamp}';\n` +
+  (STANDALONE ? 'window.__MONOGOLF_SINGLE_FILE__ = true;\n' : '') +
+  '\n';
 
 const before = html;
 html = html.replace(

@@ -24,7 +24,14 @@ const DEG = Math.PI / 180;
 
 // Tätä hitaampi liike on tähtäystä: lyöntiasento (qCalm) seuraa mukana eikä
 // taaksevienti ala. Tätä nopeampi jäädyttää lyöntiasennon vertailukohdaksi.
-const AIM_TRACK_RATE = 90 * DEG;
+// Raja on matala tarkoituksella: rauhallinen iso heilautuskaari kulkee
+// helposti 60–90 °/s vauhtia, ja korkeammalla rajalla se tulkittiin
+// laitetesteissä tähtäykseksi. Tähtäys on selvästi tätä hitaampaa kääntöä.
+const AIM_TRACK_RATE = 40 * DEG;
+// Taaksevientiin pysähtynyt liike puretaan asennon mukaan: jos poikkeama oli
+// lähes pelkkää kiertoa pystyakselin ympäri (kallistus alle tämän), kyseessä
+// oli ripeä tähtäyskääntö ja se otetaan tähtäykseksi.
+const TWIST_RESET_ANGLE = 25 * DEG;
 // Taaksevienti on tunnistettu, kun maila poikkeaa tämän verran lyöntiasennosta.
 const BACKSWING_MIN = 35 * DEG;
 // Osuma tulkitaan tapahtuvaksi, kun maila palaa tätä lähemmäs lyöntiasentoa.
@@ -100,6 +107,14 @@ function angleBetween(qa, qb) {
 function twistAround(q, axis) {
   const d = q[1] * axis[0] + q[2] * axis[1] + q[3] * axis[2];
   return 2 * Math.atan2(d, Math.abs(q[0]));
+}
+
+/** Kierron kallistusosuus: paljonko akseli itse poikkeutuu kierrossa q. */
+function deviationAround(q, axis) {
+  const d = q[1] * axis[0] + q[2] * axis[1] + q[3] * axis[2];
+  const twist = qnormalize([q[0], axis[0] * d, axis[1] * d, axis[2] * d]);
+  const swing = qmul(q, qconj(twist));
+  return 2 * Math.acos(clampRange(Math.abs(swing[0]), -1, 1));
 }
 
 /**
@@ -270,8 +285,18 @@ export class GolfSwing extends EventTarget {
       // Nykyisestä asennosta tulee uusi lyöntiasento, ettei vaihe jää lukkoon.
       this.stillFor = rate < CALM_RATE ? (this.stillFor || 0) + dt : 0;
       if (this.phase === 'backswing' && this.stillFor >= BACKSWING_RESET_HOLD) {
+        const rel = qmul(qconj(this.qCalm), this.q);
+        const tilt = deviationAround(rel, this.axis);
         this.qCalm = this.q;
-        this.aimOffset = twistAngle - this.aim * AIM_SIGN;
+        if (tilt < TWIST_RESET_ANGLE) {
+          // Lähes pelkkä kierto pystyakselin ympäri: kyseessä oli ripeä
+          // tähtäyskääntö, joten se otetaan tähtäykseksi eikä hylätä.
+          this.aim = (twistAngle - this.aimOffset) * AIM_SIGN;
+          this.dispatchEvent(new CustomEvent('aim', { detail: { angle: this.aim } }));
+        } else {
+          // Kesken jäänyt heilautus: tähtäys säilytetään ennallaan.
+          this.aimOffset = twistAngle - this.aim * AIM_SIGN;
+        }
         this._setPhase('address');
       }
       this.prevRel = relAngle;

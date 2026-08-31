@@ -77,6 +77,7 @@ export class Game {
       btnFullscreen: root.querySelector('#btnFullscreen'),
       installHint: root.querySelector('#installHint'),
       menuNote: root.querySelector('#menuNote'),
+      buildStamp: root.querySelector('#buildStamp'),
       btnRemote: root.querySelector('#btnRemote'),
       remote: root.querySelector('#remote'),
       remoteTitle: root.querySelector('#remoteTitle'),
@@ -139,6 +140,12 @@ export class Game {
     this.time = 0;
     this.insetTop = 0;
     this.insetBottom = 0;
+
+    // Versioleima kertoo, mikä käännös laitteessa oikeasti pyörii.
+    if (this.el.buildStamp) {
+      this.el.buildStamp.textContent =
+        'Versio ' + (window.__MONOGOLF_BUILD__ || 'kehitys');
+    }
 
     this.loadProgress();
     this.bindUI();

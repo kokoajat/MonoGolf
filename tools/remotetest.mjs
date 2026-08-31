@@ -237,8 +237,8 @@ if (!roundTrip.assembled) errors.push('ruutujen kokoaminen epäonnistui');
     feed(0, 0, 0, 0.1); // gyro havaitaan
     swing.zero({ x: 0, y: 0, z: 9.81 }); // pystyakseli = laitteen z
 
-    // 1. Pelkkä kääntely tähtää eikä saa laukaista lyöntiä.
-    feed(60, 0, 0, 0.5); // 30° pystyakselin ympäri
+    // 1. Rauhallinen kääntely tähtää eikä saa laukaista lyöntiä.
+    feed(30, 0, 0, 1.0); // 30° pystyakselin ympäri
     const aimAfterTurn = (swing.aim * 180) / Math.PI;
     const firedOnTurn = events.some((e) => e.t === 'impact');
 
@@ -336,7 +336,7 @@ if (!roundTrip.assembled) errors.push('ruutujen kokoaminen epäonnistui');
 
     // 1. Myötäpäivään 30° → tähtäyksen pitää kääntyä oikealle (positiivinen
     //    kulma kääntää ruudulla myötäpäivään, koska y kasvaa alaspäin).
-    feed(0, 0, 60, 0.5);
+    feed(0, 0, 30, 1.0);
     const aimClockwise = (swing.aim * 180) / Math.PI;
 
     // 2. Heilautus laajalla kaarella poispäin radasta ja vauhdilla takaisin.
@@ -347,12 +347,21 @@ if (!roundTrip.assembled) errors.push('ruutujen kokoaminen epäonnistui');
     feed(0, 0, 0, 0.5);
     const aimAfterHit = (swing.aim * 180) / Math.PI;
 
-    return { aimClockwise, backswing, hit, aimAfterHit };
+    // 3. Ripeä tähtäyskääntö (yli 40 °/s, pelkkää kiertoa) menee hetkeksi
+    //    taaksevienniksi, mutta pysähdyksen jälkeen se otetaan tähtäykseksi
+    //    eikä kääntö huku.
+    feed(0, 0, 60, 1.0); // 60° lisää myötäpäivään, liian nopeasti
+    feed(0, 0, 0, 1.5); // pysähdys purkaa taakseviennin
+    const aimFastTurn = (swing.aim * 180) / Math.PI;
+    const fastTurnFired = impacts.length !== 1;
+
+    return { aimClockwise, backswing, hit, aimAfterHit, aimFastTurn, fastTurnFired };
   });
   console.log('golfote (lattiaa kohti):', JSON.stringify({
     ...grip,
     aimClockwise: +grip.aimClockwise.toFixed(1),
     aimAfterHit: +grip.aimAfterHit.toFixed(1),
+    aimFastTurn: +grip.aimFastTurn.toFixed(1),
   }));
   if (Math.abs(grip.aimClockwise - 30) > 4) {
     errors.push(
@@ -365,6 +374,13 @@ if (!roundTrip.assembled) errors.push('ruutujen kokoaminen epäonnistui');
   if (Math.abs(grip.aimAfterHit - grip.aimClockwise) > 4) {
     errors.push('golfotteen lyönti siirsi tähtäystä');
   }
+  if (Math.abs(grip.aimFastTurn - (grip.aimAfterHit + 60)) > 5) {
+    errors.push(
+      `ripeä tähtäyskääntö hukkui (${grip.aimFastTurn.toFixed(1)}°, ` +
+        `odotettu ${(grip.aimAfterHit + 60).toFixed(0)}°)`,
+    );
+  }
+  if (grip.fastTurnFired) errors.push('ripeä tähtäyskääntö laukaisi lyönnin');
 }
 
 // --- Gyrovirheen kompensointi ja taakseviennin peruutus ---------------------
