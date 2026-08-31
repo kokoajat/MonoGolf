@@ -15,6 +15,18 @@ import { GolfSwing } from './golfswing.js';
 import { WakeLock } from './wakelock.js';
 
 const FRAME_MS = 400; // QR-ruutujen vaihtoväli, kun koodi ei mahdu yhteen
+const CONNECT_TIMEOUT = 25000; // ms; ICE-neuvottelu ei voi kestää tätä kauempaa
+
+/** Ehdokastyypit parikoodista: montako lähiverkko- ja julkista osoitetta. */
+function candidateSummary(packed) {
+  const blob = packed.split('|')[5] || '';
+  const parts = blob.split(';').filter(Boolean);
+  return {
+    lan: parts.filter((c) => c[0] === 'h').length,
+    mdns: parts.filter((c) => c[0] === 'h' && c.includes('.local')).length,
+    public: parts.filter((c) => c[0] === 's' || c[0] === 'r').length,
+  };
+}
 
 export class RemoteUI {
   constructor(game) {
@@ -34,6 +46,8 @@ export class RemoteUI {
     this.lastAimSent = 0;
     this.hostReady = false;
     this.wakeLock = new WakeLock();
+    this.connectTimer = null;
+    this.candidates = { local: null, remote: null };
 
     this.el.remoteClose.addEventListener('click', () => this.cancel());
     this.el.btnRoleScreen.addEventListener('click', () => this.startHost());
@@ -58,6 +72,7 @@ export class RemoteUI {
   }
 
   cancel() {
+    this.stopConnectTimer();
     this.wakeLock.disable();
     this.stopScanner();
     this.stopFrames();
@@ -142,15 +157,38 @@ export class RemoteUI {
 
   // --- Roolit ---------------------------------------------------------------
 
+  /**
+   * Pyytää kameraluvan etukäteen. Tällä on kaksi tehtävää: lupa kysytään
+   * heti eikä kesken kytkennän, ja ennen kaikkea Chrome paljastaa laitteen
+   * oikeat lähiverkko-osoitteet ICE-ehdokkaissa vain kun sivulla on
+   * medialupa – ilman sitä tarjouksessa olisi vain mDNS-nimiä, joiden
+   * selvitys ei toimi kaikissa verkoissa.
+   */
+  async warmupCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+        audio: false,
+      });
+      for (const track of stream.getTracks()) track.stop();
+      return true;
+    } catch {
+      return false; // jatketaan mDNS-ehdokkailla
+    }
+  }
+
   /** Tämä laite on näyttö: luo tarjous, näytä se, skannaa mailan vastaus. */
   async startHost() {
     this.role = 'host';
     this.setStep('Näyttö · vaihe 1/2');
+    this.setStatus('Pyydetään kameralupaa…');
+    await this.warmupCamera();
     this.setStatus('Luodaan parikoodia…');
     this.link = new RemoteLink('host');
     this.bindLink();
     try {
       const offer = await this.link.createOffer();
+      this.candidates.local = candidateSummary(offer);
       this.showCode(offer);
       this.setStatus('Skannaa tämä koodi mailapuhelimella. Paina sitten Jatka.');
       this.el.remoteNext.hidden = false;
@@ -170,7 +208,9 @@ export class RemoteUI {
   async finishHost(answer) {
     this.setStatus('Yhdistetään…');
     try {
+      this.candidates.remote = candidateSummary(answer);
       await this.link.acceptAnswer(answer);
+      this.startConnectTimer();
     } catch (err) {
       this.setStatus('Parikoodi ei kelvannut: ' + err.message);
     }
@@ -193,8 +233,11 @@ export class RemoteUI {
     this.scan(async (offer) => {
       this.setStep('Maila · vaihe 2/2');
       try {
+        this.candidates.remote = candidateSummary(offer);
         const answer = await this.link.createAnswer(offer);
+        this.candidates.local = candidateSummary(answer);
         this.showCode(answer);
+        this.startConnectTimer();
         this.setStatus('Näytä tämä koodi näyttöpuhelimen kameralle.');
       } catch (err) {
         this.setStatus('Parikoodi ei kelvannut: ' + err.message);
@@ -204,7 +247,75 @@ export class RemoteUI {
 
   // --- Yhteys ---------------------------------------------------------------
 
+  startConnectTimer() {
+    this.stopConnectTimer();
+    this.connectTimer = setTimeout(() => this.onConnectFailed('aikakatkaisu'), CONNECT_TIMEOUT);
+  }
+
+  stopConnectTimer() {
+    if (this.connectTimer) clearTimeout(this.connectTimer);
+    this.connectTimer = null;
+  }
+
+  /** Kertoo mahdollisimman tarkasti miksi yhteys ei syntynyt, ja tarjoaa
+   *  uuden yrityksen samalla roolilla. */
+  onConnectFailed(reason) {
+    if (this.link?.connected) return;
+    this.stopConnectTimer();
+    this.stopScanner();
+    this.stopFrames();
+
+    const hints = [];
+    const l = this.candidates.local;
+    const r = this.candidates.remote;
+    if (l && r) {
+      if (!l.public && !r.public) {
+        hints.push('Kumpikaan puhelin ei saanut julkista osoitetta – STUN voi olla estetty.');
+      }
+      if (l.mdns === l.lan || (r && r.mdns === r.lan)) {
+        hints.push(
+          'Lähiverkko-osoitteet ovat piilotettuja (mDNS); kaikki reitittimet eivät välitä niitä.',
+        );
+      }
+      hints.push(
+        'Jos puhelimet ovat samassa wifissä, reitittimen asiakaseristys (AP isolation) ' +
+          'estää laitteiden välisen liikenteen – kokeile toista verkkoa tai jaa toisesta ' +
+          'puhelimesta yhteyspiste ja liitä toinen siihen.',
+      );
+    }
+    if (reason === 'aikakatkaisu') {
+      hints.push('Tee kytkentä ripeästi: neuvottelu vanhenee, jos skannaus kestää kauan.');
+    }
+
+    const role = this.role;
+    this.el.remote.hidden = false;
+    this.el.controller.hidden = true;
+    this.setStep(role === 'host' ? 'Näyttö' : 'Maila');
+    this.el.remoteQrWrap.hidden = true;
+    this.el.remoteScanWrap.hidden = true;
+    this.el.remoteFrames.textContent = '';
+    this.setStatus('Yhteys ei muodostunut. ' + hints.join(' '));
+    this.el.remoteNext.hidden = false;
+    this.el.remoteNext.textContent = 'Yritä uudelleen';
+    this.el.remoteNext.onclick = () => {
+      this.el.remoteNext.hidden = true;
+      if (this.link) this.link.close();
+      this.link = null;
+      if (role === 'host') this.startHost();
+      else this.startController();
+    };
+  }
+
   bindLink() {
+    this.link.addEventListener('state', (e) => {
+      if (e.detail.state === 'failed') this.onConnectFailed('ice');
+    });
+    this.link.addEventListener('ice', (e) => {
+      // Näytetään neuvottelun eteneminen, ettei "Yhdistetään…" ole mykkä.
+      if (e.detail.state === 'checking' && !this.link.connected) {
+        this.setStatus('Yhdistetään… (etsitään reittiä puhelinten välille)');
+      }
+    });
     this.link.addEventListener('open', () => this.onConnected());
     this.link.addEventListener('close', () => {
       this.wakeLock.disable();
@@ -219,6 +330,7 @@ export class RemoteUI {
   }
 
   onConnected() {
+    this.stopConnectTimer();
     this.stopFrames();
     this.stopScanner();
     // Kumpaakaan puhelinta ei kosketa pelatessa, joten näyttö pidetään

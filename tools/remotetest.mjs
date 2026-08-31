@@ -64,7 +64,12 @@ const browser = await chromium.launch({
   ...(CHROME ? { executablePath: CHROME } : {}),
   // Ilman mDNS-piilotusta ehdokkaat ovat suoria IP-osoitteita, mikä tekee
   // testistä vakaan myös eristetyssä ajoympäristössä.
-  args: ['--disable-features=WebRtcHideLocalIpsWithMdns'],
+  args: [
+    '--disable-features=WebRtcHideLocalIpsWithMdns',
+    // Näytön parikytkentä pyytää kameraluvan; testissä kamera on tekokuvaa.
+    '--use-fake-ui-for-media-stream',
+    '--use-fake-device-for-media-stream',
+  ],
 });
 
 const errors = [];
@@ -461,6 +466,70 @@ if (opened[0] && opened[1]) {
       (text === shown.payload ? 'vastaa parikoodia' : 'EI VASTAA'),
   );
   if (text !== shown.payload) errors.push('ruudulla näkyvä QR-koodi ei vastaa parikoodia');
+}
+
+// --- Epäonnistumisen käsittely: syy näkyviin ja uusi yritys -----------------
+{
+  const failure = await host.evaluate(() => {
+    const ui = window.game.remoteUI;
+    ui.role = 'host';
+    ui.candidates.local = { lan: 2, mdns: 2, public: 0 };
+    ui.candidates.remote = { lan: 1, mdns: 0, public: 0 };
+    ui.onConnectFailed('aikakatkaisu');
+    return {
+      visible: !document.querySelector('#remote').hidden,
+      status: document.querySelector('#remoteStatus').textContent,
+      retry: !document.querySelector('#remoteNext').hidden,
+      retryLabel: document.querySelector('#remoteNext').textContent,
+    };
+  });
+  console.log('epäonnistumisnäkymä:', JSON.stringify({ ...failure, status: failure.status.slice(0, 60) + '…' }));
+  if (!failure.visible || !failure.retry || failure.retryLabel !== 'Yritä uudelleen') {
+    errors.push('epäonnistuminen ei tarjonnut uutta yritystä');
+  }
+  if (!failure.status.includes('Yhteys ei muodostunut')) {
+    errors.push('epäonnistumisen syytä ei näytetty');
+  }
+  await host.evaluate(() => window.game.remoteUI.cancel());
+}
+
+// --- Kameralupa paljastaa oikeat lähiverkko-osoitteet -----------------------
+// Ajetaan erillisellä selaimella ILMAN mDNS-poiskytkentää, jotta nähdään
+// sama tilanne kuin oikealla puhelimella.
+{
+  const b2 = await chromium.launch({
+    ...(CHROME ? { executablePath: CHROME } : {}),
+    args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+  });
+  const p2 = await b2.newPage();
+  await p2.goto(base, { waitUntil: 'load' });
+  const mdnsCheck = await p2.evaluate(async () => {
+    const { RemoteLink } = window.MonoGolf;
+
+    const offerCandidates = async () => {
+      const link = new RemoteLink('host');
+      const offer = await link.createOffer();
+      link.close();
+      const blob = offer.split('|')[5] || '';
+      const hosts = blob.split(';').filter((c) => c[0] === 'h');
+      return {
+        hosts: hosts.length,
+        mdns: hosts.filter((c) => c.includes('.local')).length,
+      };
+    };
+
+    const before = await offerCandidates();
+    const ok = await window.game.remoteUI.warmupCamera();
+    const after = await offerCandidates();
+    return { cameraGranted: ok, before, after };
+  });
+  await b2.close();
+  console.log('mDNS ennen/jälkeen kameraluvan:', JSON.stringify(mdnsCheck));
+  if (!mdnsCheck.cameraGranted) {
+    console.log('  (kameraa ei saatu tässä ympäristössä – tarkistus ohitettu)');
+  } else if (mdnsCheck.after.hosts > 0 && mdnsCheck.after.mdns === mdnsCheck.after.hosts) {
+    errors.push('kameralupa ei paljastanut oikeita lähiverkko-osoitteita');
+  }
 }
 
 await browser.close();

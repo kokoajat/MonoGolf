@@ -175,9 +175,15 @@ export class RemoteLink extends EventTarget {
     // Julkinen STUN auttaa, jos laitteet eivät ole samassa verkossa. Yhteys
     // syntyy silti ilman sitä, kun molemmat ovat samassa lähiverkossa.
     const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ],
     });
     pc.oniceconnectionstatechange = () => {
+      // Välitetään raaka ICE-tila käyttöliittymälle, jotta "Yhdistetään…"
+      // ei jää mykäksi: epäonnistuminen pitää näyttää ja selittää.
+      this._emit('ice', { state: pc.iceConnectionState });
       if (['failed', 'disconnected', 'closed'].includes(pc.iceConnectionState)) {
         this._setState(pc.iceConnectionState === 'failed' ? 'failed' : 'closed');
       }
