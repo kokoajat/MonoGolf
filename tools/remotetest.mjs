@@ -252,6 +252,16 @@ if (!roundTrip.assembled) errors.push('ruutujen kokoaminen epäonnistui');
     feed(0, 0, 0, 0.5);
     const aimAfterSwing = (swing.aim * 180) / Math.PI;
 
+    // 4. Laitetesteissä löytynyt vika: oikea heilautus kiertää mailaa myös
+    //    pystyakselin ympäri. Nopean pystyakselikierron pitää olla lyönti
+    //    (ei tähtäystä), ja paluun pitää laukaista osuma.
+    feed(300, 0, 0, 0.4); // 120° pystyakselin ympäri vauhdilla
+    const verticalBackswing = swing.phase;
+    feed(-500, 0, 0, 0.26); // ripeä paluu lyöntiasentoon
+    const verticalImpacts = events.filter((e) => e.t === 'impact').length;
+    feed(0, 0, 0, 0.5);
+    const aimAfterVertical = (swing.aim * 180) / Math.PI;
+
     return {
       aimAfterTurn,
       firedOnTurn,
@@ -259,6 +269,9 @@ if (!roundTrip.assembled) errors.push('ruutujen kokoaminen epäonnistui');
       impact: impact ? { power: +impact.power.toFixed(2) } : null,
       phaseAfterSwing: swing.phase,
       aimAfterSwing,
+      verticalBackswing,
+      verticalImpacts,
+      aimAfterVertical,
     };
   });
   console.log('gyro-lyönti:', JSON.stringify(golf));
@@ -274,6 +287,15 @@ if (!roundTrip.assembled) errors.push('ruutujen kokoaminen epäonnistui');
   if (golf.phaseAfterSwing !== 'address') errors.push('lyönnin jälkeen ei palattu tähtäykseen');
   if (Math.abs(golf.aimAfterSwing - golf.aimAfterTurn) > 4) {
     errors.push('tähtäys hyppäsi lyönnin jälkeen');
+  }
+  if (golf.verticalBackswing !== 'backswing') {
+    errors.push('nopea pystyakselikierto ei kelvannut taaksevienniksi');
+  }
+  if (golf.verticalImpacts !== 2) {
+    errors.push(`pystyakseliheilautus ei lyönyt (osumia ${golf.verticalImpacts}, odotettu 2)`);
+  }
+  if (Math.abs(golf.aimAfterVertical - golf.aimAfterSwing) > 4) {
+    errors.push('nopea heilautus siirsi tähtäystä');
   }
 }
 
@@ -491,6 +513,33 @@ if (opened[0] && opened[1]) {
     errors.push('epäonnistumisen syytä ei näytetty');
   }
   await host.evaluate(() => window.game.remoteUI.cancel());
+}
+
+// --- Mobiiliverkko tunnistetaan ja siitä varoitetaan ------------------------
+{
+  const cellular = await host.evaluate(() => {
+    Object.defineProperty(navigator, 'connection', {
+      value: { type: 'cellular' },
+      configurable: true,
+    });
+    const ui = window.game.remoteUI;
+    ui.open();
+    const openStatus = document.querySelector('#remoteStatus').textContent;
+    ui.role = 'host';
+    ui.candidates.local = { lan: 1, mdns: 0, public: 1 };
+    ui.candidates.remote = { lan: 1, mdns: 0, public: 1 };
+    ui.onConnectFailed('aikakatkaisu');
+    const failStatus = document.querySelector('#remoteStatus').textContent;
+    ui.cancel();
+    delete navigator.connection;
+    return {
+      warnsOnOpen: openStatus.includes('mobiiliverkossa'),
+      explainsOnFail: failStatus.includes('mobiiliverkossa'),
+    };
+  });
+  console.log('mobiiliverkkovaroitus:', JSON.stringify(cellular));
+  if (!cellular.warnsOnOpen) errors.push('mobiiliverkosta ei varoitettu parikytkennän alussa');
+  if (!cellular.explainsOnFail) errors.push('mobiiliverkkoa ei mainittu vikanäkymässä');
 }
 
 // --- Kameralupa paljastaa oikeat lähiverkko-osoitteet -----------------------

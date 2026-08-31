@@ -17,6 +17,16 @@ import { WakeLock } from './wakelock.js';
 const FRAME_MS = 400; // QR-ruutujen vaihtoväli, kun koodi ei mahdu yhteen
 const CONNECT_TIMEOUT = 25000; // ms; ICE-neuvottelu ei voi kestää tätä kauempaa
 
+/**
+ * Onko tämä laite mobiiliverkossa? Suora WebRTC-yhteys kännykkäverkon yli ei
+ * käytännössä onnistu ilman välityspalvelinta (operaattorin NAT estää sen),
+ * joten tästä kannattaa varoittaa jo ennen parikytkennän yrittämistä.
+ * Android-Chrome kertoo verkon tyypin; muualla tieto voi puuttua.
+ */
+function onCellularData() {
+  return navigator.connection?.type === 'cellular';
+}
+
 /** Ehdokastyypit parikoodista: montako lähiverkko- ja julkista osoitetta. */
 function candidateSummary(packed) {
   const blob = packed.split('|')[5] || '';
@@ -67,7 +77,12 @@ export class RemoteUI {
     this.el.remoteRoles.hidden = false;
     this.el.remoteStage.hidden = true;
     this.setStatus(
-      'Valitse, kumpi tämä laite on. Näytöllä pelataan, mailaa heilautetaan.',
+      'Valitse, kumpi tämä laite on. Näytöllä pelataan, mailaa heilautetaan.' +
+        (onCellularData()
+          ? ' HUOM: tämä puhelin on mobiiliverkossa. Yhteys vaatii, että molemmat ' +
+            'puhelimet ovat samassa wifissä – tai liitä tämä puhelin toisen ' +
+            'puhelimen jakamaan yhteyspisteeseen.'
+          : ''),
     );
   }
 
@@ -268,7 +283,14 @@ export class RemoteUI {
     const hints = [];
     const l = this.candidates.local;
     const r = this.candidates.remote;
-    if (l && r) {
+    if (onCellularData()) {
+      // Varmin selitys ensin: mobiiliverkon yli suora yhteys ei onnistu.
+      hints.push(
+        'Tämä puhelin on mobiiliverkossa, ei wifissä – suora yhteys ei onnistu ' +
+          'kännykkäverkon yli. Liitä molemmat puhelimet samaan wifiin, tai jaa ' +
+          'toisesta puhelimesta yhteyspiste ja liitä tämä puhelin siihen.',
+      );
+    } else if (l && r) {
       if (!l.public && !r.public) {
         hints.push('Kumpikaan puhelin ei saanut julkista osoitetta – STUN voi olla estetty.');
       }
@@ -283,7 +305,7 @@ export class RemoteUI {
           'puhelimesta yhteyspiste ja liitä toinen siihen.',
       );
     }
-    if (reason === 'aikakatkaisu') {
+    if (reason === 'aikakatkaisu' && !onCellularData()) {
       hints.push('Tee kytkentä ripeästi: neuvottelu vanhenee, jos skannaus kestää kauan.');
     }
 
@@ -459,7 +481,8 @@ export class RemoteUI {
     this.link.send({ t: 'zero' });
     navigator.vibrate?.(30);
     this.el.controllerStatus.textContent =
-      'Lyöntiasento nollattu. Käännä ohjainta tähdätäksesi ja lyö.';
+      'Lyöntiasento nollattu. Tähtää kääntämällä rauhallisesti – lyönti on ' +
+      'ripeä heilautus ja paluu lyöntiasentoon.';
   }
 
   setNeedle(angle) {
