@@ -299,6 +299,74 @@ if (!roundTrip.assembled) errors.push('ruutujen kokoaminen epäonnistui');
   }
 }
 
+// --- Golfote: puhelin kohti lattiaa, vasen reuna rataan päin ----------------
+// Jäljittelee sovittua pelitapaa. Laiteakselit tässä asennossa:
+//   +y (yläreuna) alas kohti lattiaa, -x (vasen reuna) radan suuntaan.
+// Painovoiman vastavoima (mitattu g) osoittaa ylös = laitteen -y.
+// Myötäpäivään (ylhäältä katsottuna) kierto on maailmassa -U-akselin kierto,
+// laitekoordinaateissa kulmanopeus -rate·(0,-1,0) eli gamma = +rate.
+// Heilautus poispäin radasta kiertää radan suuntaista vaaka-akselia
+// (laitteessa -x), eli beta-kanavaa.
+{
+  const grip = await controller.evaluate(async () => {
+    const { GolfSwing } = window.MonoGolf;
+    const source = new EventTarget();
+    const swing = new GolfSwing();
+    swing.attach(source);
+    const impacts = [];
+    swing.addEventListener('impact', (e) => impacts.push(e.detail));
+
+    const dt = 1 / 60;
+    const feed = (alpha, beta, gamma, seconds) => {
+      for (let t = 0; t < seconds; t += dt) {
+        source.dispatchEvent(
+          new CustomEvent('raw', {
+            detail: {
+              rotationRate: { alpha, beta, gamma },
+              gravity: { x: 0, y: -9.81, z: 0 },
+              dt,
+            },
+          }),
+        );
+      }
+    };
+
+    feed(0, 0, 0, 0.1);
+    swing.zero({ x: 0, y: -9.81, z: 0 });
+
+    // 1. Myötäpäivään 30° → tähtäyksen pitää kääntyä oikealle (positiivinen
+    //    kulma kääntää ruudulla myötäpäivään, koska y kasvaa alaspäin).
+    feed(0, 0, 60, 0.5);
+    const aimClockwise = (swing.aim * 180) / Math.PI;
+
+    // 2. Heilautus laajalla kaarella poispäin radasta ja vauhdilla takaisin.
+    feed(0, -220, 0, 0.5); // 110° kaari poispäin
+    const backswing = swing.phase;
+    feed(0, 620, 0, 0.19); // paluu rataa kohti
+    const hit = impacts.length === 1;
+    feed(0, 0, 0, 0.5);
+    const aimAfterHit = (swing.aim * 180) / Math.PI;
+
+    return { aimClockwise, backswing, hit, aimAfterHit };
+  });
+  console.log('golfote (lattiaa kohti):', JSON.stringify({
+    ...grip,
+    aimClockwise: +grip.aimClockwise.toFixed(1),
+    aimAfterHit: +grip.aimAfterHit.toFixed(1),
+  }));
+  if (Math.abs(grip.aimClockwise - 30) > 4) {
+    errors.push(
+      `golfotteessa myötäpäivään kierto antoi ${grip.aimClockwise.toFixed(1)}°, ` +
+        'odotettu +30° (oikealle)',
+    );
+  }
+  if (grip.backswing !== 'backswing') errors.push('golfotteen kaari ei kelvannut taaksevienniksi');
+  if (!grip.hit) errors.push('golfotteen paluu rataa kohti ei lyönyt');
+  if (Math.abs(grip.aimAfterHit - grip.aimClockwise) > 4) {
+    errors.push('golfotteen lyönti siirsi tähtäystä');
+  }
+}
+
 // --- Gyrovirheen kompensointi ja taakseviennin peruutus ---------------------
 {
   const fixes = await controller.evaluate(async () => {
