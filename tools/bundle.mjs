@@ -25,6 +25,7 @@ const MODULES = [
   'src/render.js',
   'src/qr.js',
   'src/golfswing.js',
+  'src/wakelock.js',
   'src/remote.js',
   'src/scanner.js',
   'src/remoteui.js',

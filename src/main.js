@@ -8,6 +8,7 @@ import {
   ChunkCollector,
 } from './remote.js';
 import { GolfSwing } from './golfswing.js';
+import { WakeLock } from './wakelock.js';
 
 function start() {
   const root = document.getElementById('app');
@@ -31,6 +32,7 @@ function start() {
     toChunks,
     ChunkCollector,
     GolfSwing,
+    WakeLock,
   };
 
   // Service worker tekee pelistä asennettavan ja pelattavan ilman verkkoa.

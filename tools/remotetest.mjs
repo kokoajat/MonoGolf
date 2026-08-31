@@ -272,6 +272,114 @@ if (!roundTrip.assembled) errors.push('ruutujen kokoaminen epäonnistui');
   }
 }
 
+// --- Gyrovirheen kompensointi ja taakseviennin peruutus ---------------------
+{
+  const fixes = await controller.evaluate(async () => {
+    const { GolfSwing, WakeLock } = window.MonoGolf;
+    const source = new EventTarget();
+    const swing = new GolfSwing();
+    swing.attach(source);
+    const impacts = [];
+    swing.addEventListener('impact', (e) => impacts.push(e.detail));
+
+    const dt = 1 / 60;
+    const feed = (alpha, beta, gamma, seconds) => {
+      for (let t = 0; t < seconds; t += dt) {
+        source.dispatchEvent(
+          new CustomEvent('raw', {
+            detail: {
+              rotationRate: { alpha, beta, gamma },
+              gravity: { x: 0, y: 0, z: 9.81 },
+              dt,
+            },
+          }),
+        );
+      }
+    };
+
+    // 1. Nollavirhe: gyro näyttää 1,2 °/s vaikka laite on paikallaan.
+    //    Ilman kompensointia tähtäys ryömisi 3,6° viidessä sekunnissa.
+    feed(1.2, 0, 0, 4); // virhe opitaan ennen nollausta
+    swing.zero({ x: 0, y: 0, z: 9.81 });
+    feed(1.2, 0, 0, 5);
+    const driftDeg = Math.abs((swing.aim * 180) / Math.PI);
+    const biasLearned = (swing.bias[2] * 180) / Math.PI;
+
+    // 2. Keskeytetty taaksevienti: hidas paluu ei lyö ja tähtäys vapautuu.
+    feed(1.2, 200, 0, 0.5); // 100° taakse
+    const inBackswing = swing.phase === 'backswing';
+    feed(1.2, -40, 0, 2.4); // hidas paluu lyöntikohdan lähelle
+    feed(1.2, 0, 0, 1.0); // ja rauhassa pysyminen
+    const cancelled = swing.phase === 'address' && impacts.length === 0;
+
+    // 3. Peruutuksen jälkeen oikea lyönti toimii yhä.
+    feed(1.2, 180, 0, 0.6);
+    feed(1.2, -500, 0, 0.25);
+    const swingWorks = impacts.length === 1;
+
+    // 4. Wake Lock: pyyntö ei kaadu ja tila raportoidaan rehellisesti.
+    const wl = new WakeLock();
+    let wlResult = 'ei tuettu';
+    if (wl.supported) {
+      const got = await wl.enable();
+      wlResult = got && wl.active ? 'aktiivinen' : 'evätty';
+      wl.disable();
+    }
+
+    return { driftDeg, biasLearned, inBackswing, cancelled, swingWorks, wlResult };
+  });
+  console.log('korjaukset:', JSON.stringify({
+    ...fixes,
+    driftDeg: +fixes.driftDeg.toFixed(2),
+    biasLearned: +fixes.biasLearned.toFixed(2),
+  }));
+  if (fixes.driftDeg > 0.8) {
+    errors.push(`tähtäys ryömi ${fixes.driftDeg.toFixed(2)}° nollavirheestä huolimatta`);
+  }
+  if (Math.abs(fixes.biasLearned - 1.2) > 0.2) {
+    errors.push(`nollavirhettä ei opittu (${fixes.biasLearned.toFixed(2)} °/s)`);
+  }
+  if (!fixes.inBackswing) errors.push('taaksevientiä ei tunnistettu peruutustestissä');
+  if (!fixes.cancelled) errors.push('keskeytetty taaksevienti ei palauttanut tähtäystä');
+  if (!fixes.swingWorks) errors.push('lyönti ei toiminut peruutuksen jälkeen');
+  if (fixes.wlResult === 'evätty') {
+    console.log('  (wake lock evättiin tässä ympäristössä – ei virhe)');
+  }
+}
+
+// --- Osuma ilman näytön lupaa ei laukaise lyöntiä ---------------------------
+if (opened[0] && opened[1]) {
+  const gated = await controller.evaluate(async () => {
+    const ui = window.game.remoteUI;
+    // Jäljitellään mailatilaa ilman kameraa: linkki ja golf suoraan.
+    ui.link = window.link;
+    ui.role = 'controller';
+    ui.hostReady = false;
+    const { GolfSwing } = window.MonoGolf;
+    ui.golf = new GolfSwing();
+    let sent = 0;
+    const origSend = window.link.send.bind(window.link);
+    window.link.send = (m) => {
+      if (m.t === 'swing') sent++;
+      return origSend(m);
+    };
+    ui.golf.addEventListener('impact', (e) => {
+      // sama käsittelijä kuin startControllerModessa
+      if (!ui.hostReady) return;
+      window.link.send({ t: 'swing', power: e.detail.power });
+    });
+    ui.golf.dispatchEvent(new CustomEvent('impact', { detail: { power: 0.5, rate: 5 } }));
+    const blockedCount = sent;
+    ui.hostReady = true;
+    ui.golf.dispatchEvent(new CustomEvent('impact', { detail: { power: 0.5, rate: 5 } }));
+    window.link.send = origSend;
+    return { blockedCount, allowedCount: sent };
+  });
+  console.log('osuman suodatus:', JSON.stringify(gated));
+  if (gated.blockedCount !== 0) errors.push('lyönti lähti vaikka näyttö ei ollut valmis');
+  if (gated.allowedCount !== 1) errors.push('lyönti ei lähtenyt kun näyttö oli valmis');
+}
+
 // --- Näyttö kääntää tähtäystä mailan kulman mukaan --------------------------
 if (opened[0] && opened[1]) {
   const aimed = await host.evaluate(async () => {

@@ -28,6 +28,17 @@ const CALM_HOLD = 0.35;
 const POWER_MIN_RATE = 110 * DEG;
 const POWER_MAX_RATE = 800 * DEG;
 
+// Gyron nollavirheen kompensointi. Tyypillinen virhe on 0,1–1 °/s, mikä
+// siirtäisi lyöntikohtaa jopa kymmeniä asteita minuutissa ja veisi osuma-
+// alueen alta parissa minuutissa. Virhe opitaan aina kun laite on lähes
+// liikkumatta ja vähennetään jokaisesta näytteestä.
+const BIAS_MAX_RATE = 3 * DEG; // tätä hiljaisempi = laite paikallaan
+const BIAS_TAU = 1.5; // s, oppimisen aikavakio
+
+// Keskeytetty taaksevienti: maila palaa lyöntiasentoon hitaasti lyömättä.
+// Ilman paluupolkua tähtäys jäisi lukkoon seuraavaan lyöntiin asti.
+const CANCEL_HOLD = 0.4; // s rauhassa lyöntikohdan lähellä
+
 // Suunnan etumerkki: ohjainta myötäpäivään (ylhäältä katsottuna) kääntämällä
 // tähtäys kääntyy oikealle. Ruudun y kasvaa alaspäin, joten kulma pienenee.
 const AIM_SIGN = -1;
@@ -89,6 +100,8 @@ export class GolfSwing extends EventTarget {
     this.calmFor = 0;
     this.lastAimSent = 0;
     this.hasGyro = false;
+    this.bias = [0, 0, 0];
+    this.cancelFor = 0;
     this._onRaw = this._onRaw.bind(this);
   }
 
@@ -116,6 +129,7 @@ export class GolfSwing extends EventTarget {
     this.aimOffset = 0;
     this.peakRate = 0;
     this.calmFor = 0;
+    this.cancelFor = 0;
     this.enabled = true;
     this._setPhase('address');
     this.dispatchEvent(new CustomEvent('aim', { detail: { angle: 0 } }));
@@ -137,13 +151,26 @@ export class GolfSwing extends EventTarget {
     if (gravity) this.lastGravity = gravity;
     if (!rotationRate || rotationRate.alpha === null) return;
     this.hasGyro = true;
-    if (!this.enabled) return;
 
     // devicemotion antaa asteina sekunnissa: alpha z-akselin, beta x-akselin
     // ja gamma y-akselin ympäri.
-    const wx = (rotationRate.beta || 0) * DEG;
-    const wy = (rotationRate.gamma || 0) * DEG;
-    const wz = (rotationRate.alpha || 0) * DEG;
+    const rawX = (rotationRate.beta || 0) * DEG;
+    const rawY = (rotationRate.gamma || 0) * DEG;
+    const rawZ = (rotationRate.alpha || 0) * DEG;
+
+    // Nollavirhe opitaan laitteen ollessa lähes paikallaan – myös ennen
+    // nollausta, jolloin kalibrointi on valmiina heti alusta.
+    if (Math.hypot(rawX, rawY, rawZ) < BIAS_MAX_RATE) {
+      const k = 1 - Math.exp(-dt / BIAS_TAU);
+      this.bias[0] += (rawX - this.bias[0]) * k;
+      this.bias[1] += (rawY - this.bias[1]) * k;
+      this.bias[2] += (rawZ - this.bias[2]) * k;
+    }
+    if (!this.enabled) return;
+
+    const wx = rawX - this.bias[0];
+    const wy = rawY - this.bias[1];
+    const wz = rawZ - this.bias[2];
     const rate = Math.hypot(wx, wy, wz);
 
     // Asennon integrointi: q ← q ⊗ Δq, missä Δq on kierto ω·dt.
@@ -166,6 +193,7 @@ export class GolfSwing extends EventTarget {
         // Tähtäys lukitaan taaksevienniksi ajaksi: lyöntiliike kiertää
         // mailaa myös pystyakselin ympäri, eikä se saa siirtää tähtäystä.
         this.peakRate = 0;
+        this.cancelFor = 0;
         this._setPhase('backswing');
       }
       return;
@@ -173,15 +201,30 @@ export class GolfSwing extends EventTarget {
 
     if (this.phase === 'backswing') {
       this.peakRate = Math.max(this.peakRate, rate);
-      if (swingAngle < IMPACT_ANGLE && rate > MIN_IMPACT_RATE) {
-        const power = clampRange(
-          (this.peakRate - POWER_MIN_RATE) / (POWER_MAX_RATE - POWER_MIN_RATE),
-          0,
-          1,
-        );
-        this.calmFor = 0;
-        this._setPhase('follow');
-        this.dispatchEvent(new CustomEvent('impact', { detail: { power, rate: this.peakRate } }));
+      if (swingAngle < IMPACT_ANGLE) {
+        if (rate > MIN_IMPACT_RATE) {
+          const power = clampRange(
+            (this.peakRate - POWER_MIN_RATE) / (POWER_MAX_RATE - POWER_MIN_RATE),
+            0,
+            1,
+          );
+          this.calmFor = 0;
+          this._setPhase('follow');
+          this.dispatchEvent(
+            new CustomEvent('impact', { detail: { power, rate: this.peakRate } }),
+          );
+        } else {
+          // Maila laskettiin rauhassa takaisin: taaksevienti peruuntuu eikä
+          // lyöntiä synny. Nollakohta siirretään, ettei tähtäys hypähdä.
+          this.cancelFor += dt;
+          if (this.cancelFor >= CANCEL_HOLD) {
+            this.cancelFor = 0;
+            this.aimOffset = twistAngle - this.aim * AIM_SIGN;
+            this._setPhase('address');
+          }
+        }
+      } else {
+        this.cancelFor = 0;
       }
       return;
     }

@@ -145,6 +145,13 @@ Ohjaimen toinen tila (**Tila: heilautus**) on sama kuin yhden puhelimen ohjaus: 
 heilautuksen nopeudesta ja suunta näytön ruudulta sormella. Se kelpaa varatilaksi, jos
 laitteesta ei löydy gyroa.
 
+Gyron nollavirhe (tyypillisesti 0,1–1 °/s, joka siirtäisi lyöntikohtaa kymmeniä asteita
+minuutissa) opitaan automaattisesti aina kun maila on hetken liikkumatta ja vähennetään
+jokaisesta näytteestä. Keskeytetty taaksevienti – maila lasketaan rauhassa takaisin
+lyömättä – palauttaa tähtäystilan eikä laukaise lyöntiä. Molemmat puhelimet pitävät
+näytön hereillä Wake Lock -rajapinnalla pelin ajan, koska kumpaakaan ei kosketa
+pelatessa. Harjoituslyönti pallon vieriessä ei värise eikä väitä osuneensa.
+
 Kalibrointiarvot ovat `src/golfswing.js`:n alussa: taakseviennin kynnys 35°, osuma-alue
 12°, ja teho välillä 110–800 °/s.
 

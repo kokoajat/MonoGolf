@@ -12,6 +12,7 @@ import { RemoteLink, toChunks, ChunkCollector } from './remote.js';
 import { QrScanner, qrFormatAvailable } from './scanner.js';
 import { MotionInput, motionSupported } from './sensors.js';
 import { GolfSwing } from './golfswing.js';
+import { WakeLock } from './wakelock.js';
 
 const FRAME_MS = 400; // QR-ruutujen vaihtoväli, kun koodi ei mahdu yhteen
 
@@ -31,6 +32,8 @@ export class RemoteUI {
     this.swingMode = 'golf'; // 'golf' | 'heilautus'
     this.lastMotionSent = 0;
     this.lastAimSent = 0;
+    this.hostReady = false;
+    this.wakeLock = new WakeLock();
 
     this.el.remoteClose.addEventListener('click', () => this.cancel());
     this.el.btnRoleScreen.addEventListener('click', () => this.startHost());
@@ -55,6 +58,7 @@ export class RemoteUI {
   }
 
   cancel() {
+    this.wakeLock.disable();
     this.stopScanner();
     this.stopFrames();
     if (this.link) this.link.close();
@@ -203,6 +207,7 @@ export class RemoteUI {
   bindLink() {
     this.link.addEventListener('open', () => this.onConnected());
     this.link.addEventListener('close', () => {
+      this.wakeLock.disable();
       if (this.role === 'controller') {
         this.el.controllerStatus.textContent = 'Yhteys katkesi.';
       } else {
@@ -216,6 +221,9 @@ export class RemoteUI {
   onConnected() {
     this.stopFrames();
     this.stopScanner();
+    // Kumpaakaan puhelinta ei kosketa pelatessa, joten näyttö pidetään
+    // hereillä – muuten Android sammuttaa sen ja yhteys katkeaa.
+    this.wakeLock.enable();
     this.el.remote.hidden = true;
     if (this.role === 'host') {
       this.game.setRemote(this.link);
@@ -229,6 +237,7 @@ export class RemoteUI {
     // Näyttöpuolella viestit käsittelee peli itse (ks. Game#setRemote).
     if (this.role === 'host') return;
     if (msg.t === 'state') {
+      this.hostReady = !!msg.ready;
       this.el.controllerHole.textContent = `${msg.hole}/18 · ${msg.name}`;
       this.el.controllerStrokes.textContent = `${msg.strokes} lyöntiä · par ${msg.par}`;
       this.el.controllerStatus.textContent = msg.status || '';
@@ -275,7 +284,7 @@ export class RemoteUI {
     });
     this.motion.addEventListener('swingcancel', () => this.setPower(0));
     this.motion.addEventListener('swing', (e) => {
-      if (this.swingMode !== 'heilautus') return;
+      if (this.swingMode !== 'heilautus' || !this.hostReady) return;
       this.link.send({ t: 'swing', power: e.detail.power });
       navigator.vibrate?.(40);
     });
@@ -294,6 +303,12 @@ export class RemoteUI {
     this.golf.addEventListener('phase', (e) => this.setPhase(e.detail.phase));
     this.golf.addEventListener('impact', (e) => {
       this.setPower(e.detail.power);
+      if (!this.hostReady) {
+        // Harjoituslyönti pallon vieriessä: ei värinää eikä "Lyönti!"-huijausta.
+        this.el.controllerStatus.textContent =
+          'Näyttö ei ollut valmis – lyöntiä ei laskettu.';
+        return;
+      }
       this.link.send({ t: 'swing', power: e.detail.power });
       navigator.vibrate?.(60);
     });
